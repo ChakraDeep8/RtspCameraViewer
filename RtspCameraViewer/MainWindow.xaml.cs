@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using LibVLCSharp.Shared;
 using RtspCameraViewer.Controls;
@@ -21,6 +22,10 @@ namespace RtspCameraViewer
         private WindowState _preFullscreenState;
         private WindowStyle _preFullscreenStyle;
         private ResizeMode _preFullscreenResizeMode;
+
+        /// <summary>null = "All Stores" (no filter); otherwise only cameras with a matching Store show.</summary>
+        private string? _selectedStore;
+        private bool _suppressStoreSelectionChanged;
 
         public MainWindow()
         {
@@ -57,16 +62,80 @@ namespace RtspCameraViewer
 
         private void RefreshLayout()
         {
+            RefreshStoreBar();
+
+            // Grouped storewise (unassigned cameras last) even in "All Stores", so the grid
+            // always reads store-by-store; filtered further to one store when selected.
+            var visible = (_selectedStore == null
+                    ? _cameras.AsEnumerable()
+                    : _cameras.Where(c => string.Equals(StoreOf(c), _selectedStore, System.StringComparison.OrdinalIgnoreCase)))
+                .OrderBy(c => StoreOf(c) == null ? 1 : 0)
+                .ThenBy(c => StoreOf(c), System.StringComparer.OrdinalIgnoreCase)
+                .ThenBy(c => c.Name, System.StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
             GridHost.Children.Clear();
-            foreach (var camera in _cameras)
+            foreach (var camera in visible)
             {
                 if (_tiles.TryGetValue(camera.Id, out var tile))
                     GridHost.Children.Add(tile);
             }
 
-            CameraCountText.Text = _cameras.Count == 1 ? "1 camera" : $"{_cameras.Count} cameras";
-            EmptyStateText.Visibility = _cameras.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            GridHost.Visibility = _cameras.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            CameraCountText.Text = visible.Count == 1 ? "1 camera" : $"{visible.Count} cameras";
+            if (_selectedStore != null) CameraCountText.Text += $"  ·  store {_selectedStore}";
+
+            EmptyStateText.Visibility = visible.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            EmptyStateText.Text = _cameras.Count == 0
+                ? "No cameras yet. Click \"+ Add Camera\" to add your first RTSP stream."
+                : "No cameras in this store.";
+            GridHost.Visibility = visible.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        private static string? StoreOf(Camera c) => string.IsNullOrWhiteSpace(c.Store) ? null : c.Store;
+
+        /// <summary>
+        /// Rebuilds the "SELECT A STORE" dropdown from whatever store codes are currently
+        /// present. Hidden entirely until at least one camera has a store code (e.g. after an
+        /// Excel import).
+        /// </summary>
+        private void RefreshStoreBar()
+        {
+            var stores = _cameras.Select(StoreOf).Where(s => s != null).Select(s => s!)
+                .Distinct(System.StringComparer.OrdinalIgnoreCase)
+                .OrderBy(s => s, System.StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (stores.Count == 0)
+            {
+                StoreBar.Visibility = Visibility.Collapsed;
+                _selectedStore = null;
+                return;
+            }
+
+            if (_selectedStore != null && !stores.Contains(_selectedStore, System.StringComparer.OrdinalIgnoreCase))
+                _selectedStore = null; // the store that was selected no longer has any cameras
+
+            StoreBar.Visibility = Visibility.Visible;
+
+            _suppressStoreSelectionChanged = true;
+            StoreSelector.Items.Clear();
+            StoreSelector.Items.Add(new ComboBoxItem { Content = "All Stores", Tag = null });
+            foreach (var store in stores)
+                StoreSelector.Items.Add(new ComboBoxItem { Content = store, Tag = store });
+
+            StoreSelector.SelectedIndex = 0;
+            foreach (ComboBoxItem item in StoreSelector.Items)
+            {
+                if (Equals(item.Tag, _selectedStore)) { StoreSelector.SelectedItem = item; break; }
+            }
+            _suppressStoreSelectionChanged = false;
+        }
+
+        private void StoreSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_suppressStoreSelectionChanged) return;
+            _selectedStore = (StoreSelector.SelectedItem as ComboBoxItem)?.Tag as string;
+            RefreshLayout();
         }
 
         private void AddCamera_Click(object sender, RoutedEventArgs e)
@@ -100,21 +169,6 @@ namespace RtspCameraViewer
             MessageBox.Show(this,
                 $"Imported: {addedText} added, {dialog.UpdatedCount} updated, {dialog.SkippedCount} skipped (no IP).",
                 "Import Cameras", MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-
-        private void ViewByStore_Click(object sender, RoutedEventArgs e)
-        {
-            var hasStores = _cameras.Any(c => !string.IsNullOrWhiteSpace(c.Store));
-            if (!hasStores)
-            {
-                MessageBox.Show(this,
-                    "No cameras have a store assigned yet.\n\nUse \"Import Excel…\" to bring in a storewise device list first.",
-                    "Watch by Store", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-
-            var window = new Views.StoreViewWindow(_cameras, _libVlc) { Owner = this };
-            window.ShowDialog();
         }
 
         private void Tile_RemoveRequested(object sender, RoutedEventArgs e)
