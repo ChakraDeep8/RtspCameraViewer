@@ -1,0 +1,53 @@
+<Window x:Class="RtspCameraViewer.Views.ImportCamerasDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Import Cameras from Excel" Height="440" Width="520"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="{StaticResource AppBackground}"
+        FontFamily="Segoe UI">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Excel file" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
+        <Grid Grid.Row="1" Margin="0,0,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="FilePathBox" Style="{StaticResource InputBox}" IsReadOnly="True" Margin="0,0,8,0"/>
+            <Button Grid.Column="1" Content="Browse…" Width="90" Height="32" Click="Browse_Click" Style="{StaticResource ToolButton}"/>
+        </Grid>
+
+        <TextBlock Grid.Row="2" Text="Prefer this IP column for the RTSP URL" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,14">
+            <RadioButton x:Name="PreferTailscaleRadio" Content="Tailscale IP (works remotely)" GroupName="IpPref" IsChecked="True"
+                         Foreground="{StaticResource TextPrimary}" Margin="0,0,20,0" Checked="Preference_Changed"/>
+            <RadioButton x:Name="PreferLocalRadio" Content="Local IP" GroupName="IpPref"
+                         Foreground="{StaticResource TextPrimary}" Checked="Preference_Changed"/>
+        </StackPanel>
+
+        <TextBlock Grid.Row="4" x:Name="SummaryText" Text="Choose a file to preview." Foreground="{StaticResource TextSecondary}" FontSize="12" Margin="0,0,0,8"/>
+
+        <Border Grid.Row="5" Background="{StaticResource TileBackground}" CornerRadius="4" Margin="0,0,0,14">
+            <ListBox x:Name="PreviewList" Background="Transparent" BorderThickness="0" Foreground="{StaticResource TextPrimary}"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="11.5" Padding="8"/>
+        </Border>
+
+        <TextBlock Grid.Row="6" x:Name="ErrorText" Foreground="{StaticResource ErrorBrush}" FontSize="12"
+                   TextWrapping="Wrap" Visibility="Collapsed" Margin="0,0,0,10"/>
+
+        <StackPanel Grid.Row="7" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Cancel" Width="90" Height="32" Margin="0,0,8,0" Click="Cancel_Click" Style="{StaticResource ToolButton}"/>
+            <Button x:Name="ImportButton" Content="Import" Width="110" Height="32" Click="Import_Click" Style="{StaticResource ToolButton}" IsEnabled="False"/>
+        </StackPanel>
+    </Grid>
+</Window>

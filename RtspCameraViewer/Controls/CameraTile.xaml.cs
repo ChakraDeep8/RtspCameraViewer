@@ -59,11 +59,10 @@ namespace RtspCameraViewer.Controls
 
             MouseEnter += (_, _) => AnimateToolbar(1);
             MouseLeave += (_, _) => AnimateToolbar(0);
+            // A single click anywhere on the cell expands it (hover-toolbar buttons swallow their
+            // own click before it bubbles here, so Reconnect/Remove/Fullscreen still work normally).
             MouseLeftButtonDown += (_, e) =>
-            {
-                if (e.ClickCount == 2)
-                    RaiseEvent(new RoutedEventArgs(FullscreenRequestedEvent, this));
-            };
+                RaiseEvent(new RoutedEventArgs(FullscreenRequestedEvent, this));
 
             StartPlayback();
         }

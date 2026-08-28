@@ -24,6 +24,13 @@ namespace RtspCameraViewer.Models
         public string? Password { get; set; }
 
         /// <summary>
+        /// Store/site code this camera belongs to, used to group cameras in the storewise view
+        /// (e.g. imported from an Excel sheet, or derived from the device name). Null/empty
+        /// means unassigned.
+        /// </summary>
+        public string? Store { get; set; }
+
+        /// <summary>
         /// Builds the effective RTSP URL used for playback, injecting credentials
         /// into the URL if they were supplied separately.
         /// </summary>

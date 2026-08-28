@@ -82,6 +82,41 @@ namespace RtspCameraViewer
             }
         }
 
+        private void ImportExcel_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new ImportCamerasDialog(_cameras) { Owner = this };
+            if (dialog.ShowDialog() != true) return;
+
+            foreach (var camera in dialog.NewCameras)
+            {
+                _cameras.Add(camera);
+                CreateTile(camera);
+            }
+
+            CameraStore.Save(_cameras);
+            RefreshLayout();
+
+            var addedText = dialog.NewCameras.Count == 1 ? "1 camera" : $"{dialog.NewCameras.Count} cameras";
+            MessageBox.Show(this,
+                $"Imported: {addedText} added, {dialog.UpdatedCount} updated, {dialog.SkippedCount} skipped (no IP).",
+                "Import Cameras", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void ViewByStore_Click(object sender, RoutedEventArgs e)
+        {
+            var hasStores = _cameras.Any(c => !string.IsNullOrWhiteSpace(c.Store));
+            if (!hasStores)
+            {
+                MessageBox.Show(this,
+                    "No cameras have a store assigned yet.\n\nUse \"Import Excel…\" to bring in a storewise device list first.",
+                    "Watch by Store", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var window = new Views.StoreViewWindow(_cameras, _libVlc) { Owner = this };
+            window.ShowDialog();
+        }
+
         private void Tile_RemoveRequested(object sender, RoutedEventArgs e)
         {
             if (sender is not CameraTile tile) return;
