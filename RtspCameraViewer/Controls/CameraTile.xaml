@@ -11,12 +11,14 @@
         <Grid>
             <vlc:VideoView x:Name="Video" Background="Black"/>
 
-            <!-- Placeholder shown while connecting / on error -->
-            <StackPanel x:Name="PlaceholderPanel" HorizontalAlignment="Center" VerticalAlignment="Center"
-                        Visibility="Visible">
+            <!-- Placeholder shown while connecting / on error. Covers the whole tile (not just the
+                 text) — the video surface beneath renders white until its first real frame
+                 arrives, so a center-only placeholder let that white show through everywhere
+                 else in the tile. -->
+            <Border x:Name="PlaceholderPanel" Background="{StaticResource TileBackground}" Visibility="Visible">
                 <TextBlock x:Name="PlaceholderText" Text="Connecting…" Foreground="{StaticResource TextSecondary}"
-                           FontSize="13" HorizontalAlignment="Center"/>
-            </StackPanel>
+                           FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
 
             <!-- Top overlay: name + status -->
             <Border VerticalAlignment="Top" Background="#B0000000" Padding="8,5">
