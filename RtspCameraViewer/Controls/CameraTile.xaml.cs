@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -41,6 +41,10 @@ namespace RtspCameraViewer.Controls
         private MediaPlayer? _mediaPlayer;
         private readonly DispatcherTimer _reconnectTimer;
         private bool _disposed;
+
+        /// <summary>True while this tile is meant to be streaming. False once StopPlayback is
+        /// called, until StartPlayback brings it back.</summary>
+        public bool IsRunning { get; private set; }
         private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(5);
 
         public CameraTile(Camera camera, LibVLC libVlc)
@@ -64,7 +68,10 @@ namespace RtspCameraViewer.Controls
             MouseLeftButtonDown += (_, e) =>
                 RaiseEvent(new RoutedEventArgs(FullscreenRequestedEvent, this));
 
-            StartPlayback();
+            // Deliberately NOT started here. The host decides which tiles may stream (see
+            // MainWindow.RefreshLayout) so that creating tiles for a large import does not
+            // briefly open every stream at once before the hidden ones are stopped again.
+            SetStatus(CameraStatus.Stopped, "");
         }
 
         private void AnimateToolbar(double target)
@@ -76,6 +83,7 @@ namespace RtspCameraViewer.Controls
         public void StartPlayback()
         {
             if (_disposed) return;
+            IsRunning = true;
             SetStatus(CameraStatus.Connecting, "connecting…");
 
             try
@@ -122,9 +130,25 @@ namespace RtspCameraViewer.Controls
             ScheduleReconnect();
         }
 
+        /// <summary>
+        /// Stops this tile’s stream and releases its decoder without tearing the tile down —
+        /// StartPlayback brings it back. A hidden tile that keeps streaming still consumes
+        /// bandwidth and a hardware decoder slot, which is what corrupted the visible feeds when
+        /// every store’s cameras ran at once.
+        /// </summary>
+        public void StopPlayback()
+        {
+            if (!IsRunning) return;
+            IsRunning = false;
+            _reconnectTimer.Stop();
+            DisposeMediaPlayer();
+            SetStatus(CameraStatus.Stopped, "stopped");
+        }
+
         private void ScheduleReconnect()
         {
-            if (_disposed) return;
+            // A stopped tile must not resurrect itself through the reconnect timer.
+            if (_disposed || !IsRunning) return;
             _reconnectTimer.Stop();
             _reconnectTimer.Start();
         }
@@ -172,6 +196,7 @@ namespace RtspCameraViewer.Controls
         public void Dispose()
         {
             _disposed = true;
+            IsRunning = false;
             _reconnectTimer.Stop();
             DisposeMediaPlayer();
         }

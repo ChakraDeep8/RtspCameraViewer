@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -79,6 +79,19 @@ namespace RtspCameraViewer
             {
                 if (_tiles.TryGetValue(camera.Id, out var tile))
                     GridHost.Children.Add(tile);
+            }
+
+            // Only the tiles actually on screen may stream. Previously a filtered-out tile was
+            // merely removed from the visual tree while its MediaPlayer kept decoding, so
+            // selecting one store still ran every camera in the list — saturating bandwidth and
+            // the hardware decoder, which showed up as torn and smeared frames on the visible
+            // feeds. Stopping the hidden ones frees that capacity for the store being watched.
+            var visibleIds = new HashSet<string>(visible.Select(c => c.Id));
+            foreach (var (id, tile) in _tiles)
+            {
+                bool shouldStream = visibleIds.Contains(id);
+                if (shouldStream && !tile.IsRunning) tile.StartPlayback();
+                else if (!shouldStream && tile.IsRunning) tile.StopPlayback();
             }
 
             CameraCountText.Text = visible.Count == 1 ? "1 camera" : $"{visible.Count} cameras";
