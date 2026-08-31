@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Text.RegularExpressions;
 using ClosedXML.Excel;
 using RtspCameraViewer.Models;
@@ -22,8 +23,30 @@ namespace RtspCameraViewer.Services
         {
             var first = preference == IpPreference.PreferTailscale ? TailscaleIp : LocalIp;
             var second = preference == IpPreference.PreferTailscale ? LocalIp : TailscaleIp;
-            var url = !string.IsNullOrWhiteSpace(first) ? first : second;
-            return string.IsNullOrWhiteSpace(url) ? null : url!.Trim();
+
+            // Both columns are IP columns, so a usable entry has a literal IP address for a host.
+            // Sheets carry placeholder text in that column when a device was never provisioned
+            // (e.g. a setup-failed marker), which parses as a perfectly valid URL and would
+            // otherwise be imported as a camera that can never resolve. Prefer whichever column
+            // actually holds an IP before falling back to raw non-empty text.
+            return PickHostedUrl(first) ?? PickHostedUrl(second) ?? FirstNonEmpty(first, second);
+        }
+
+        /// <summary>Returns <paramref name="candidate"/> only when its host is a literal IP address.</summary>
+        private static string? PickHostedUrl(string? candidate)
+        {
+            if (string.IsNullOrWhiteSpace(candidate)) return null;
+            var trimmed = candidate.Trim();
+
+            if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)) return null;
+            return IPAddress.TryParse(uri.Host, out _) ? trimmed : null;
+        }
+
+        private static string? FirstNonEmpty(string? a, string? b)
+        {
+            if (!string.IsNullOrWhiteSpace(a)) return a.Trim();
+            if (!string.IsNullOrWhiteSpace(b)) return b.Trim();
+            return null;
         }
     }
 
