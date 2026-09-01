@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -74,11 +75,27 @@ namespace RtspCameraViewer
                 .ThenBy(c => c.Name, System.StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
+            // A tile being shown in the expand overlay is the logical child of that
+            // ContentControl. Adding it to the grid as well throws "Specified element is already
+            // the logical child of another element", which crashed the app outright whenever the
+            // layout was rebuilt (any store switch) while a tile was expanded. If the expanded
+            // camera is no longer visible under the current filter, close the overlay; otherwise
+            // leave it there and skip it below. Unwound inline rather than calling
+            // ExitFullscreen, which would recurse back into RefreshLayout.
+            if (_fullscreenTile != null && visible.All(c => c.Id != _fullscreenTile.Camera.Id))
+            {
+                _fullscreenTile.StopPlayback();
+                FullscreenContent.Content = null;
+                FullscreenHost.Visibility = Visibility.Collapsed;
+                _fullscreenTile = null;
+            }
+
             GridHost.Children.Clear();
             foreach (var camera in visible)
             {
-                if (_tiles.TryGetValue(camera.Id, out var tile))
-                    GridHost.Children.Add(tile);
+                if (!_tiles.TryGetValue(camera.Id, out var tile)) continue;
+                if (ReferenceEquals(tile, _fullscreenTile)) continue; // it lives in the overlay
+                GridHost.Children.Add(tile);
             }
 
             // Only the tiles actually on screen may stream. Previously a filtered-out tile was
@@ -86,16 +103,38 @@ namespace RtspCameraViewer
             // selecting one store still ran every camera in the list — saturating bandwidth and
             // the hardware decoder, which showed up as torn and smeared frames on the visible
             // feeds. Stopping the hidden ones frees that capacity for the store being watched.
-            var visibleIds = new HashSet<string>(visible.Select(c => c.Id));
+            // Cap how many stream at once. Measured on this machine: 26 concurrent streams
+            // produced VLC "buffer deadlock prevented" errors at ~0.9/s and left roughly half of
+            // the connected streams without a decoder at all (which is what "RTSP not opening"
+            // and the torn frames actually were), while 6 concurrent streams dropped that to
+            // ~0.2/s. The limit is the number of simultaneous streams, not the decode settings —
+            // tuning those (software decode, skipping the loop filter, single-threaded decode)
+            // measurably did NOT help, so the honest fix is to run fewer at a time.
+            var streaming = visible.Take(MaxConcurrentStreams).ToList();
+            var streamingIds = new HashSet<string>(streaming.Select(c => c.Id));
+
+            // Stop first, and immediately: this frees sockets and decoders before the new set
+            // asks for them. Teardown no longer blocks the UI thread (see CameraTile).
             foreach (var (id, tile) in _tiles)
             {
-                bool shouldStream = visibleIds.Contains(id);
-                if (shouldStream && !tile.IsRunning) tile.StartPlayback();
-                else if (!shouldStream && tile.IsRunning) tile.StopPlayback();
+                if (streamingIds.Contains(id) || !tile.IsRunning) continue;
+                tile.StopPlayback(visibleIdsContains(id) ? "paused — over limit" : "stopped");
             }
+
+            bool visibleIdsContains(string id) => visible.Any(c => c.Id == id);
+
+            var toStart = streaming
+                .Select(c => _tiles.TryGetValue(c.Id, out var t) ? t : null)
+                .Where(t => t is { IsRunning: false })
+                .Select(t => t!)
+                .ToList();
+
+            _ = StartStaggeredAsync(toStart);
 
             CameraCountText.Text = visible.Count == 1 ? "1 camera" : $"{visible.Count} cameras";
             if (_selectedStore != null) CameraCountText.Text += $"  ·  store {_selectedStore}";
+            if (visible.Count > MaxConcurrentStreams)
+                CameraCountText.Text += $"  ·  streaming {MaxConcurrentStreams} at a time — pick a store to see the rest";
 
             EmptyStateText.Visibility = visible.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             EmptyStateText.Text = _cameras.Count == 0
@@ -103,6 +142,37 @@ namespace RtspCameraViewer
                 : "No cameras in this store.";
             GridHost.Visibility = visible.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         }
+
+        /// <summary>
+        /// Brings streams up one at a time rather than all at once. Opening a whole grid
+        /// simultaneously means every stream negotiates RTSP and spins up a decoder in the same
+        /// instant, which starves them all — connections established but no decoder, and VLC
+        /// logging "buffer deadlock prevented". Spacing the starts lets each settle.
+        /// </summary>
+        private async Task StartStaggeredAsync(List<CameraTile> tiles)
+        {
+            const int staggerMs = 180;
+
+            // A newer layout pass supersedes this one, so an in-flight sequence for a store the
+            // user has already switched away from stops instead of reopening its streams.
+            int generation = ++_startGeneration;
+
+            foreach (var tile in tiles)
+            {
+                if (generation != _startGeneration) return;
+                if (!tile.IsRunning) tile.StartPlayback();
+                await Task.Delay(staggerMs);
+            }
+        }
+
+        private int _startGeneration;
+
+        /// <summary>
+        /// How many cameras may stream simultaneously. Raising this degrades every stream rather
+        /// than showing more of them: past roughly a dozen, decoders start losing picture buffers
+        /// and frames tear. Cameras beyond the cap stay listed but paused.
+        /// </summary>
+        private const int MaxConcurrentStreams = 12;
 
         private static string? StoreOf(Camera c) => string.IsNullOrWhiteSpace(c.Store) ? null : c.Store;
 
@@ -207,10 +277,19 @@ namespace RtspCameraViewer
         {
             if (sender is not CameraTile tile) return;
 
+            // Stop the stream BEFORE reparenting. Moving the tile hands its VideoView a new
+            // parent window, and doing that while a Direct3D video output is still attached to
+            // the old one kills the process natively — no managed exception, no event log entry,
+            // just a silent exit. Restarting after the move costs a short reconnect and is the
+            // difference between a working expand and a coin flip.
+            tile.StopPlayback("expanding…");
+
             GridHost.Children.Remove(tile);
             FullscreenContent.Content = tile;
             FullscreenHost.Visibility = Visibility.Visible;
             _fullscreenTile = tile;
+
+            tile.StartPlayback();
         }
 
         private void ExitFullscreen_Click(object sender, RoutedEventArgs e) => ExitFullscreen();
@@ -219,10 +298,13 @@ namespace RtspCameraViewer
         {
             if (_fullscreenTile == null) return;
 
+            // Same reasoning as the expand path: never reparent a tile that is still streaming.
+            _fullscreenTile.StopPlayback("collapsing…");
+
             FullscreenContent.Content = null;
             FullscreenHost.Visibility = Visibility.Collapsed;
             _fullscreenTile = null;
-            RefreshLayout();
+            RefreshLayout(); // puts the tile back in the grid and restarts it there
         }
 
         private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;

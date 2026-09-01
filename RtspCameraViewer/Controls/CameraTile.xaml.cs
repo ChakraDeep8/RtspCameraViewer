@@ -113,6 +113,14 @@ namespace RtspCameraViewer.Controls
                 // Reduce latency and force TCP for more reliable RTSP behind NAT/firewalls.
                 media.AddOption(":rtsp-tcp");
                 media.AddOption(":network-caching=800");
+
+                // Surveillance streams carry no audio worth playing, and every enabled track
+                // costs a decoder, an output chain and buffers per tile.
+                media.AddOption(":no-audio");
+                media.AddOption(":no-spu");
+                media.AddOption(":no-osd");
+                media.AddOption(":no-video-title-show");
+
                 _mediaPlayer.Media = media;
 
                 // Named handlers so teardown can detach them, and BeginInvoke rather than
@@ -156,13 +164,13 @@ namespace RtspCameraViewer.Controls
         /// bandwidth and a hardware decoder slot, which is what corrupted the visible feeds when
         /// every store’s cameras ran at once.
         /// </summary>
-        public void StopPlayback()
+        public void StopPlayback(string label = "stopped")
         {
             if (!IsRunning) return;
             IsRunning = false;
             _reconnectTimer.Stop();
             DisposeMediaPlayer();
-            SetStatus(CameraStatus.Stopped, "stopped");
+            SetStatus(CameraStatus.Stopped, label);
         }
 
         private void ScheduleReconnect()
