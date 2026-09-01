@@ -63,10 +63,15 @@ namespace RtspCameraViewer.Controls
 
             MouseEnter += (_, _) => AnimateToolbar(1);
             MouseLeave += (_, _) => AnimateToolbar(0);
-            // A single click anywhere on the cell expands it (hover-toolbar buttons swallow their
-            // own click before it bubbles here, so Reconnect/Remove/Fullscreen still work normally).
+            // Double-click anywhere on the cell expands it. A single click is deliberately inert:
+            // it was previously enough to expand, which fired on any stray click while scanning
+            // the grid. Hover-toolbar buttons handle their own clicks before they bubble here, so
+            // Reconnect/Remove/Fullscreen keep working.
             MouseLeftButtonDown += (_, e) =>
-                RaiseEvent(new RoutedEventArgs(FullscreenRequestedEvent, this));
+            {
+                if (e.ClickCount == 2)
+                    RaiseEvent(new RoutedEventArgs(FullscreenRequestedEvent, this));
+            };
 
             // Deliberately NOT started here. The host decides which tiles may stream (see
             // MainWindow.RefreshLayout) so that creating tiles for a large import does not
