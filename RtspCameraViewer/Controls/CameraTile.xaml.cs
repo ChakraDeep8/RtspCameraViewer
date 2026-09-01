@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Threading;
 using System.Windows.Threading;
 using LibVLCSharp.Shared;
 using RtspCameraViewer.Models;
@@ -114,9 +115,12 @@ namespace RtspCameraViewer.Controls
                 media.AddOption(":network-caching=800");
                 _mediaPlayer.Media = media;
 
-                _mediaPlayer.Playing += (_, _) => Dispatcher.Invoke(() => SetStatus(CameraStatus.Live, "live"));
-                _mediaPlayer.EncounteredError += (_, _) => Dispatcher.Invoke(HandlePlaybackFailure);
-                _mediaPlayer.EndReached += (_, _) => Dispatcher.Invoke(HandlePlaybackFailure);
+                // Named handlers so teardown can detach them, and BeginInvoke rather than
+                // Invoke: these fire on LibVLC worker threads, and a BLOCKING Invoke there
+                // deadlocks against a UI thread that is itself inside MediaPlayer.Stop().
+                _mediaPlayer.Playing += OnPlayerPlaying;
+                _mediaPlayer.EncounteredError += OnPlayerFailed;
+                _mediaPlayer.EndReached += OnPlayerFailed;
 
                 _mediaPlayer.Play();
             }
@@ -127,6 +131,17 @@ namespace RtspCameraViewer.Controls
                 ScheduleReconnect();
             }
         }
+
+        private void OnPlayerPlaying(object? sender, EventArgs e) =>
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                // BeginInvoke is queued, so this can land after the tile was stopped or disposed.
+                if (_disposed || !IsRunning) return;
+                SetStatus(CameraStatus.Live, "live");
+            }));
+
+        private void OnPlayerFailed(object? sender, EventArgs e) =>
+            Dispatcher.BeginInvoke(new Action(HandlePlaybackFailure));
 
         private void HandlePlaybackFailure()
         {
@@ -187,15 +202,26 @@ namespace RtspCameraViewer.Controls
 
         private void DisposeMediaPlayer()
         {
-            if (_mediaPlayer == null) return;
-            try
+            var player = _mediaPlayer;
+            if (player == null) return;
+            _mediaPlayer = null;
+
+            // Detach first so a callback arriving mid-teardown cannot touch a player that is
+            // being disposed, and cannot queue more work against this tile.
+            player.Playing -= OnPlayerPlaying;
+            player.EncounteredError -= OnPlayerFailed;
+            player.EndReached -= OnPlayerFailed;
+
+            Video.MediaPlayer = null; // a WPF control property: must be set on the UI thread
+
+            // Stop() blocks until LibVLC has wound its worker threads down. Doing that on the UI
+            // thread is what hung the app when switching stores stopped ~26 players in one go,
+            // so the blocking part runs on the thread pool instead.
+            ThreadPool.QueueUserWorkItem(_ =>
             {
-                _mediaPlayer.Stop();
-                Video.MediaPlayer = null;
-                _mediaPlayer.Dispose();
-            }
-            catch { /* ignore teardown races */ }
-            finally { _mediaPlayer = null; }
+                try { player.Stop(); player.Dispose(); }
+                catch { /* ignore teardown races */ }
+            });
         }
 
         public void Dispose()
