@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using Microsoft.Win32;
@@ -8,128 +11,191 @@ using RtspCameraViewer.Services;
 
 namespace RtspCameraViewer.Views
 {
+    /// <summary>One discovered URL as shown in the preview, with the user's edits applied to it.</summary>
+    public class ImportRow : INotifyPropertyChanged
+    {
+        private bool _include = true;
+        private string _name = "";
+
+        public bool Include
+        {
+            get => _include;
+            set { _include = value; OnChanged(nameof(Include)); }
+        }
+
+        public string Name
+        {
+            get => _name;
+            set { _name = value; OnChanged(nameof(Name)); }
+        }
+
+        public string Url { get; set; } = "";
+
+        /// <summary>Why this row starts unticked, e.g. it is already in the camera list.</summary>
+        public string Note { get; set; } = "";
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+        private void OnChanged(string p) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
+    }
+
     /// <summary>
-    /// Lets the user pick an Excel sheet of cameras (DEVICE NAME / LOCAL IP / TAILSCALE IP,
-    /// same shape as the storewise device lists) and import/merge it into the existing camera
-    /// list. Rows are matched to existing cameras by RTSP URL so re-importing an updated sheet
-    /// just refreshes names/store codes instead of duplicating entries.
+    /// Reads RTSP URLs out of a file the user already has — a DVR's .env, an installer's text or
+    /// CSV list, a spreadsheet — and adds them as cameras, all into one class.
+    ///
+    /// Everything is previewed and editable before anything is added: the file can only ever be
+    /// a guess at what the cameras are called, so the names it produces are a starting point
+    /// rather than a result.
     /// </summary>
     public partial class ImportCamerasDialog : Window
     {
         private readonly List<Camera> _existingCameras;
-        private List<ImportedCameraRow> _rows = new();
+        private readonly ObservableCollection<ImportRow> _rows = new();
 
-        /// <summary>Cameras to add, populated after a successful Import click.</summary>
+        /// <summary>Cameras to add, populated after a successful Add click.</summary>
         public List<Camera> NewCameras { get; } = new();
-        public int UpdatedCount { get; private set; }
-        public int SkippedCount { get; private set; }
 
-        public ImportCamerasDialog(List<Camera> existingCameras)
+        public ImportCamerasDialog(List<Camera> existingCameras, IEnumerable<string>? existingClasses = null, string? preselectedClass = null)
         {
             InitializeComponent();
             _existingCameras = existingCameras;
+            PreviewList.ItemsSource = _rows;
+
+            if (existingClasses != null)
+                foreach (var c in existingClasses)
+                    ClassCombo.Items.Add(c);
+
+            ClassCombo.Text = preselectedClass ?? "";
         }
 
-        private IpPreference Preference => PreferTailscaleRadio.IsChecked == true
-            ? IpPreference.PreferTailscale
-            : IpPreference.PreferLocal;
+        // =====================================================================
+        // Picking a file
+        // =====================================================================
 
         private void Browse_Click(object sender, RoutedEventArgs e)
         {
-            var dlg = new OpenFileDialog { Filter = "Excel Workbook|*.xlsx" };
+            var dlg = new OpenFileDialog { Filter = RtspFileImporter.FileFilter, Title = "Choose a file containing RTSP URLs" };
             if (dlg.ShowDialog() != true) return;
+            LoadFile(dlg.FileName);
+        }
 
-            FilePathBox.Text = dlg.FileName;
+        private void Window_DragOver(object sender, DragEventArgs e)
+        {
+            e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
+            e.Handled = true;
+        }
+
+        private void Window_Drop(object sender, DragEventArgs e)
+        {
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+            if (e.Data.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } files)
+                LoadFile(files[0]);
+        }
+
+        private void LoadFile(string path)
+        {
+            FilePathBox.Text = path;
+            HideError();
+            _rows.Clear();
+
+            List<DiscoveredCamera> found;
             try
             {
-                _rows = CameraExcelImporter.Read(dlg.FileName);
-                RefreshPreview();
+                found = RtspFileImporter.Read(path);
             }
             catch (Exception ex)
             {
                 ShowError($"Could not read this file.\n\n{ex.Message}");
-                _rows = new List<ImportedCameraRow>();
-                RefreshPreview();
-            }
-        }
-
-        private void Preference_Changed(object sender, RoutedEventArgs e) => RefreshPreview();
-
-        private void RefreshPreview()
-        {
-            if (SummaryText == null) return; // guards against the Checked event XAML fires during InitializeComponent, before this control exists
-            PreviewList.Items.Clear();
-            ErrorText.Visibility = Visibility.Collapsed;
-
-            if (_rows.Count == 0)
-            {
-                SummaryText.Text = "Choose a file to preview.";
-                ImportButton.IsEnabled = false;
+                UpdateSummary(0);
                 return;
             }
 
-            var stores = _rows.Select(r => r.Store).Distinct().Count();
-            var withUrl = _rows.Count(r => r.ResolveUrl(Preference) != null);
-            SummaryText.Text = $"{_rows.Count} camera(s) across {stores} store(s) — {withUrl} with a usable URL, {_rows.Count - withUrl} skipped (no IP in either column).";
-
-            foreach (var row in _rows)
+            if (found.Count == 0)
             {
-                var url = row.ResolveUrl(Preference);
-                var line = url != null
-                    ? $"[{row.Store}]  {row.DeviceName}  →  {url}"
-                    : $"[{row.Store}]  {row.DeviceName}  →  (no IP — skipped)";
-                if (!string.IsNullOrEmpty(row.Note)) line += $"   ({row.Note})";
-                PreviewList.Items.Add(line);
+                ShowError($"No rtsp:// addresses found in {Path.GetFileName(path)}.");
+                UpdateSummary(0);
+                return;
             }
 
-            ImportButton.IsEnabled = withUrl > 0;
+            // A URL already in the list is shown but unticked rather than hidden: silently
+            // dropping it looks like the file was misread.
+            var known = new HashSet<string>(_existingCameras.Select(c => c.Url), StringComparer.OrdinalIgnoreCase);
+
+            foreach (var c in found)
+            {
+                bool duplicate = known.Contains(c.Url);
+                _rows.Add(new ImportRow
+                {
+                    Name = c.Name,
+                    Url = c.Url,
+                    Include = !duplicate,
+                    Note = duplicate ? "already added" : ""
+                });
+            }
+
+            UpdateSummary(found.Count);
         }
+
+        private void UpdateSummary(int found)
+        {
+            int dupes = _rows.Count(r => r.Note.Length > 0);
+            SummaryText.Text = found == 0
+                ? "Nothing found yet."
+                : dupes > 0
+                    ? $"Found {found} camera{(found == 1 ? "" : "s")} — {dupes} already in your list"
+                    : $"Found {found} camera{(found == 1 ? "" : "s")}";
+            ImportButton.IsEnabled = _rows.Count > 0;
+        }
+
+        private void SelectAll_Click(object sender, RoutedEventArgs e)
+        {
+            foreach (var r in _rows) r.Include = true;
+        }
+
+        private void SelectNone_Click(object sender, RoutedEventArgs e)
+        {
+            foreach (var r in _rows) r.Include = false;
+        }
+
+        // =====================================================================
+        // Committing
+        // =====================================================================
 
         private void Import_Click(object sender, RoutedEventArgs e)
         {
-            NewCameras.Clear();
-            UpdatedCount = 0;
-            SkippedCount = 0;
-
-            foreach (var row in _rows)
+            var chosen = _rows.Where(r => r.Include).ToList();
+            if (chosen.Count == 0)
             {
-                var url = row.ResolveUrl(Preference);
-                if (url == null) { SkippedCount++; continue; }
+                ShowError("Tick at least one camera to add.");
+                return;
+            }
 
-                var existing = _existingCameras.FirstOrDefault(c =>
-                    string.Equals(c.Url, url, StringComparison.OrdinalIgnoreCase));
+            var className = ClassCombo.Text?.Trim();
+            NewCameras.Clear();
 
-                if (existing != null)
+            foreach (var row in chosen)
+            {
+                NewCameras.Add(new Camera
                 {
-                    existing.Name = row.DeviceName;
-                    existing.Store = row.Store;
-                    UpdatedCount++;
-                }
-                else
-                {
-                    NewCameras.Add(new Camera
-                    {
-                        Name = row.DeviceName,
-                        Url = url,
-                        Store = row.Store
-                    });
-                }
+                    Name = string.IsNullOrWhiteSpace(row.Name) ? "Camera" : row.Name.Trim(),
+                    // Credentials embedded in the URL are left exactly as they were written:
+                    // they are already percent-escaped in these files, and re-encoding them
+                    // is how a working URL turns into one that silently fails to authenticate.
+                    Url = row.Url,
+                    Store = string.IsNullOrWhiteSpace(className) ? null : className
+                });
             }
 
             DialogResult = true;
-            Close();
         }
 
-        private void Cancel_Click(object sender, RoutedEventArgs e)
-        {
-            DialogResult = false;
-            Close();
-        }
+        private void Cancel_Click(object sender, RoutedEventArgs e) => DialogResult = false;
 
         private void ShowError(string message)
         {
             ErrorText.Text = message;
             ErrorText.Visibility = Visibility.Visible;
         }
+
+        private void HideError() => ErrorText.Visibility = Visibility.Collapsed;
     }
 }

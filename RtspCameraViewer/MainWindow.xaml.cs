@@ -312,12 +312,37 @@ namespace RtspCameraViewer
             var dialog = new CameraEditDialog(null, ExistingClasses()) { Owner = this };
             if (dialog.ShowDialog() == true)
             {
-                var camera = dialog.Result;
-                _cameras.Add(camera);
+                _cameras.Add(dialog.Result);
                 CameraStore.Save(_cameras);
-                CreateTile(camera);
                 RefreshLayout();
+                return;
             }
+
+            if (dialog.UploadRequested)
+                ImportFromFile(dialog.TypedClass);
+        }
+
+        /// <summary>
+        /// Bulk-adds cameras read out of a file the user already has - a DVR's .env, an
+        /// installer's list, a spreadsheet - all into one class.
+        /// </summary>
+        private void ImportFromFile(string? preselectedClass)
+        {
+            var dialog = new ImportCamerasDialog(_cameras, ExistingClasses(), preselectedClass) { Owner = this };
+            if (dialog.ShowDialog() != true || dialog.NewCameras.Count == 0) return;
+
+            _cameras.AddRange(dialog.NewCameras);
+            CameraStore.Save(_cameras);
+
+            // Jump to the class the cameras just landed in, otherwise an import into a class
+            // other than the one on screen looks like it did nothing.
+            var landedIn = dialog.NewCameras[0].Store;
+            if (!string.IsNullOrWhiteSpace(landedIn)) _selectedStore = landedIn;
+
+            RefreshLayout();
+
+            int count = dialog.NewCameras.Count;
+            CameraCountText.Text += $"  ·  added {count} camera{(count == 1 ? "" : "s")}";
         }
 
         private void Tile_RemoveRequested(object sender, RoutedEventArgs e)

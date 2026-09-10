@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -76,6 +76,22 @@ namespace RtspCameraViewer.Views
 
             DialogResult = true;
             Close();
+        }
+
+        /// <summary>
+        /// True when the user chose Upload instead of filling in the form. The host opens the
+        /// import dialog: this one edits a single camera and has no business owning a bulk flow,
+        /// and the imported cameras have to be added to the same list the host already owns.
+        /// </summary>
+        public bool UploadRequested { get; private set; }
+
+        /// <summary>Class typed before Upload was clicked, so the import dialog can start there.</summary>
+        public string? TypedClass => string.IsNullOrWhiteSpace(ClassCombo.Text) ? null : ClassCombo.Text.Trim();
+
+        private void Upload_Click(object sender, RoutedEventArgs e)
+        {
+            UploadRequested = true;
+            DialogResult = false;
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
