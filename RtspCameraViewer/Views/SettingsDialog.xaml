@@ -1,0 +1,92 @@
+<Window x:Class="RtspCameraViewer.Views.SettingsDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Settings" Height="640" Width="620"
+        WindowStartupLocation="CenterOwner" MinHeight="520" MinWidth="560"
+        Background="{StaticResource AppBackground}"
+        FontFamily="Segoe UI">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- ============================ Stream quality ============================ -->
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="STREAM QUALITY" Foreground="{StaticResource TextSecondary}" FontSize="10.5"
+                       FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,10"
+                       Text="DVRs encode every channel twice — a full-resolution main stream and a small sub stream. Switching to the sub stream cuts resolution, bandwidth and decoder load together, which is what lets more cameras run at once. Nothing is re-encoded here: the camera decides what it sends."/>
+
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="Apply to" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,4"/>
+                    <ComboBox x:Name="ScopeCombo" SelectionChanged="Scope_Changed"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="Resolution" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,0,0,4"/>
+                    <ComboBox x:Name="QualityCombo" SelectionChanged="Quality_Changed"/>
+                </StackPanel>
+            </Grid>
+
+            <Grid Margin="0,0,0,16">
+                <TextBlock x:Name="QualityImpactText" Text="" Foreground="{StaticResource TextSecondary}"
+                           FontSize="11" TextWrapping="Wrap" HorizontalAlignment="Left" Margin="0,0,120,0"/>
+                <Button x:Name="ApplyQualityButton" Content="Apply" Width="100" Height="30"
+                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Click="ApplyQuality_Click" Style="{StaticResource ToolButton}"/>
+            </Grid>
+        </StackPanel>
+
+        <!-- ============================ Classes ============================ -->
+        <DockPanel Grid.Row="1">
+            <TextBlock DockPanel.Dock="Top" Text="CAMERA CLASSES" Foreground="{StaticResource TextSecondary}"
+                       FontSize="10.5" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="{StaticResource TextSecondary}"
+                       FontSize="11" Margin="0,0,0,8"
+                       Text="Rename a class and every camera in it follows. Clearing a name leaves those cameras unassigned."/>
+
+            <Border Background="{StaticResource TileBackground}" CornerRadius="4">
+                <ListBox x:Name="ClassList" Background="Transparent" BorderThickness="0"
+                         Foreground="{StaticResource TextPrimary}" HorizontalContentAlignment="Stretch"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto" Padding="4">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="Padding" Value="0"/>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="6,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource InputBox}" FontSize="12" Margin="0,0,10,0"/>
+                                <TextBlock Grid.Column="1" Text="{Binding Summary}" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextSecondary}" FontSize="11" MinWidth="150"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+        </DockPanel>
+
+        <TextBlock Grid.Row="2" x:Name="ErrorText" Foreground="{StaticResource ErrorBrush}" FontSize="12"
+                   TextWrapping="Wrap" Visibility="Collapsed" Margin="0,10,0,0"/>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Content="Cancel" Width="90" Height="32" Margin="0,0,8,0" Click="Cancel_Click" Style="{StaticResource ToolButton}"/>
+            <Button x:Name="SaveButton" Content="Save" Width="110" Height="32" Click="Save_Click" Style="{StaticResource ToolButton}"/>
+        </StackPanel>
+    </Grid>
+</Window>

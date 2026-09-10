@@ -345,6 +345,19 @@ namespace RtspCameraViewer
             CameraCountText.Text += $"  ·  added {count} camera{(count == 1 ? "" : "s")}";
         }
 
+        private void Settings_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new SettingsDialog(_cameras, _selectedStore) { Owner = this };
+            if (dialog.ShowDialog() != true || !dialog.Changed) return;
+
+            CameraStore.Save(_cameras);
+
+            // Streams have to come back up against the new URLs, and a renamed class has to be
+            // re-selected under its new name or the filter would silently fall back to "all".
+            foreach (var tile in _tiles.Values) tile.StopPlayback();
+            RefreshLayout();
+        }
+
         private void Tile_RemoveRequested(object sender, RoutedEventArgs e)
         {
             if (sender is not CameraTile tile) return;

@@ -24,6 +24,10 @@
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
                     <Button Content="+ Add Camera" Height="32" Padding="14,0" Click="AddCamera_Click"
                             Style="{StaticResource ToolButton}"/>
+                    <Button x:Name="SettingsButton" Content="&#xE713;" FontFamily="Segoe MDL2 Assets"
+                            Width="34" Height="32" Margin="6,0,0,0" FontSize="14"
+                            Click="Settings_Click" ToolTip="Settings — stream quality and camera classes"
+                            Style="{StaticResource IconButton}"/>
                     <Border Width="1" Background="#3A3A44" Margin="10,4" />
                     <Button x:Name="AppFullscreenButton" Content="&#xE740;" FontFamily="Segoe MDL2 Assets"
                             Width="34" Height="32" Margin="0,0,4,0" FontSize="14"

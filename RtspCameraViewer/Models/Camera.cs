@@ -1,5 +1,6 @@
 using System;
 using System.Text;
+using RtspCameraViewer.Services;
 
 namespace RtspCameraViewer.Models
 {
@@ -31,20 +32,29 @@ namespace RtspCameraViewer.Models
         public string? Store { get; set; }
 
         /// <summary>
-        /// Builds the effective RTSP URL used for playback, injecting credentials
-        /// into the URL if they were supplied separately.
+        /// Which of the DVR's parallel encodings to request. Held as a preference and applied at
+        /// playback rather than written into Url, so switching back to full resolution restores
+        /// exactly the URL the user supplied instead of a reconstruction of it.
+        /// </summary>
+        public StreamQuality Quality { get; set; } = StreamQuality.AsConfigured;
+
+        /// <summary>
+        /// Builds the effective RTSP URL used for playback: the saved URL pointed at the
+        /// preferred stream, with credentials injected if they were supplied separately.
         /// </summary>
         public string GetPlaybackUrl()
         {
             if (string.IsNullOrWhiteSpace(Url))
                 return string.Empty;
 
+            var url = StreamQualityRewriter.Apply(Url, Quality);
+
             if (string.IsNullOrWhiteSpace(Username))
-                return Url;
+                return url;
 
             try
             {
-                var uri = new Uri(Url);
+                var uri = new Uri(url);
                 var userInfo = string.IsNullOrEmpty(Password)
                     ? Uri.EscapeDataString(Username)
                     : $"{Uri.EscapeDataString(Username)}:{Uri.EscapeDataString(Password)}";
@@ -59,7 +69,7 @@ namespace RtspCameraViewer.Models
             catch
             {
                 // Fall back to the raw URL if it isn't a well-formed absolute URI.
-                return Url;
+                return url;
             }
         }
 
