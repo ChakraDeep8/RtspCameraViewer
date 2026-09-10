@@ -8,46 +8,63 @@
              MinWidth="160" MinHeight="120">
     <Border Background="{StaticResource TileBackground}" CornerRadius="8" ClipToBounds="True"
             BorderBrush="#3A3A44" BorderThickness="1" Margin="4">
+        <!--
+            The header sits in its OWN ROW, above the video, rather than floating over it.
+            VideoView hosts a native window, and native content always paints on top of WPF
+            content regardless of z-order (the classic airspace problem) — so the old overlaid
+            name bar was simply covered by the feed and unreadable. Keeping the header out of
+            the video's rectangle is the only reliable fix, and it makes the name legible over
+            bright scenes too, which a translucent overlay never managed.
+        -->
         <Grid>
-            <vlc:VideoView x:Name="Video" Background="Black"/>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-            <!-- Placeholder shown while connecting / on error. Covers the whole tile (not just the
-                 text) — the video surface beneath renders white until its first real frame
-                 arrives, so a center-only placeholder let that white show through everywhere
-                 else in the tile. -->
-            <Border x:Name="PlaceholderPanel" Background="{StaticResource TileBackground}" Visibility="Visible">
-                <TextBlock x:Name="PlaceholderText" Text="Connecting…" Foreground="{StaticResource TextSecondary}"
-                           FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </Border>
-
-            <!-- Top overlay: name + status -->
-            <Border VerticalAlignment="Top" Background="#B0000000" Padding="8,5">
+            <Border Grid.Row="0" Background="#22222A" Padding="8,5">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
+
                     <Ellipse x:Name="StatusDot" Width="9" Height="9" Fill="{StaticResource WarnBrush}"
                              VerticalAlignment="Center" Margin="0,0,7,0"/>
-                    <TextBlock x:Name="NameText" Grid.Column="1" Text="Camera" Foreground="White"
+                    <TextBlock x:Name="NameText" Grid.Column="1" Text="Camera" Foreground="{StaticResource TextPrimary}"
                                FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis"/>
+                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
                     <TextBlock x:Name="StatusText" Grid.Column="2" Text="" Foreground="{StaticResource TextSecondary}"
                                FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
+
+                    <!-- Also lives in the header: buttons floated over the video were invisible
+                         for the same airspace reason. -->
+                    <!-- Collapsed, not just transparent: at Opacity 0 it still reserved its
+                         width, which squeezed the camera name into an ellipsis on narrow tiles. -->
+                    <StackPanel x:Name="HoverToolbar" Grid.Column="3" Orientation="Horizontal"
+                                VerticalAlignment="Center" Visibility="Collapsed" Margin="8,0,0,0">
+                        <Button x:Name="FullscreenButton" Content="⛶" Width="24" Height="22" Margin="2,0,0,0" FontSize="11"
+                                Click="FullscreenButton_Click" ToolTip="Expand (or double-click the tile)" Style="{StaticResource ToolButton}"/>
+                        <Button x:Name="ReconnectButton" Content="⟳" Width="24" Height="22" Margin="2,0,0,0" FontSize="11"
+                                Click="ReconnectButton_Click" ToolTip="Reconnect" Style="{StaticResource ToolButton}"/>
+                        <Button x:Name="RemoveButton" Content="✕" Width="24" Height="22" Margin="2,0,0,0" FontSize="11"
+                                Click="RemoveButton_Click" ToolTip="Remove camera" Style="{StaticResource ToolButton}"/>
+                    </StackPanel>
                 </Grid>
             </Border>
 
-            <!-- Hover toolbar -->
-            <StackPanel x:Name="HoverToolbar" Orientation="Horizontal" HorizontalAlignment="Right"
-                        VerticalAlignment="Bottom" Margin="0,0,6,6" Opacity="0" Panel.ZIndex="5">
-                <Button x:Name="FullscreenButton" Content="⛶" Width="30" Height="26" Margin="3,0,0,0"
-                        Click="FullscreenButton_Click" ToolTip="Expand (or double-click the tile)" Style="{StaticResource ToolButton}"/>
-                <Button x:Name="ReconnectButton" Content="⟳" Width="30" Height="26" Margin="3,0,0,0"
-                        Click="ReconnectButton_Click" ToolTip="Reconnect" Style="{StaticResource ToolButton}"/>
-                <Button x:Name="RemoveButton" Content="✕" Width="30" Height="26" Margin="3,0,0,0"
-                        Click="RemoveButton_Click" ToolTip="Remove camera" Style="{StaticResource ToolButton}"/>
-            </StackPanel>
+            <Grid Grid.Row="1">
+                <vlc:VideoView x:Name="Video" Background="Black"/>
+
+                <!-- Covers the whole video area while connecting or on error: the video surface
+                     renders white until its first real frame arrives. -->
+                <Border x:Name="PlaceholderPanel" Background="{StaticResource TileBackground}" Visibility="Visible">
+                    <TextBlock x:Name="PlaceholderText" Text="Connecting…" Foreground="{StaticResource TextSecondary}"
+                               FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+            </Grid>
         </Grid>
     </Border>
 </UserControl>

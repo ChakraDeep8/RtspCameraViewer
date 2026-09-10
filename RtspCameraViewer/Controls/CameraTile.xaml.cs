@@ -74,8 +74,8 @@ namespace RtspCameraViewer.Controls
                 StartPlayback();
             };
 
-            MouseEnter += (_, _) => AnimateToolbar(1);
-            MouseLeave += (_, _) => AnimateToolbar(0);
+            MouseEnter += (_, _) => HoverToolbar.Visibility = Visibility.Visible;
+            MouseLeave += (_, _) => HoverToolbar.Visibility = Visibility.Collapsed;
             // Double-click anywhere on the cell expands it. A single click is deliberately inert:
             // it was previously enough to expand, which fired on any stray click while scanning
             // the grid. Hover-toolbar buttons handle their own clicks before they bubble here, so
@@ -90,12 +90,6 @@ namespace RtspCameraViewer.Controls
             // MainWindow.RefreshLayout) so that creating tiles for a large import does not
             // briefly open every stream at once before the hidden ones are stopped again.
             SetStatus(CameraStatus.Stopped, "");
-        }
-
-        private void AnimateToolbar(double target)
-        {
-            var anim = new System.Windows.Media.Animation.DoubleAnimation(target, TimeSpan.FromMilliseconds(120));
-            HoverToolbar.BeginAnimation(OpacityProperty, anim);
         }
 
         public void StartPlayback()
@@ -243,7 +237,15 @@ namespace RtspCameraViewer.Controls
         private void SetStatus(CameraStatus status, string label)
         {
             StatusText.Text = label;
-            PlaceholderPanel.Visibility = status == CameraStatus.Live ? Visibility.Collapsed : Visibility.Visible;
+
+            bool live = status == CameraStatus.Live;
+            PlaceholderPanel.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
+
+            // The video host is a native window and paints over any WPF drawn in the same space,
+            // so the placeholder alone could not hide it - a stopped tile showed the video
+            // surface's blank white rather than the dark placeholder. Taking the host out of the
+            // render while it is not live is what actually lets the placeholder show.
+            Video.Visibility = live ? Visibility.Visible : Visibility.Hidden;
             PlaceholderText.Text = status switch
             {
                 CameraStatus.Connecting => "Connecting…",

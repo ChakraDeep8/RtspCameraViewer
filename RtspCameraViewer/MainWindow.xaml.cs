@@ -137,14 +137,14 @@ namespace RtspCameraViewer
             UpdateGridShape();
 
             CameraCountText.Text = visible.Count == 1 ? "1 camera" : $"{visible.Count} cameras";
-            if (_selectedStore != null) CameraCountText.Text += $"  ·  store {_selectedStore}";
+            if (_selectedStore != null) CameraCountText.Text += $"  ·  {_selectedStore}";
             if (visible.Count > MaxConcurrentStreams)
-                CameraCountText.Text += $"  ·  streaming {MaxConcurrentStreams} at a time — pick a store to see the rest";
+                CameraCountText.Text += $"  ·  streaming {MaxConcurrentStreams} at a time — pick a class to see the rest";
 
             EmptyStateText.Visibility = visible.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             EmptyStateText.Text = _cameras.Count == 0
                 ? "No cameras yet. Click \"+ Add Camera\" to add your first RTSP stream."
-                : "No cameras in this store.";
+                : "No cameras in this class.";
             GridHost.Visibility = visible.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         }
 
@@ -238,7 +238,17 @@ namespace RtspCameraViewer
             GridHost.Rows = (int)Math.Ceiling(count / (double)bestColumns);
         }
 
+        /// <summary>Class name a camera belongs to, or null when it has not been given one.</summary>
         private static string? StoreOf(Camera c) => string.IsNullOrWhiteSpace(c.Store) ? null : c.Store;
+
+        /// <summary>Class names already in use, offered when adding a camera so it can join an
+        /// existing group instead of a near-duplicate being typed.</summary>
+        private IEnumerable<string> ExistingClasses() =>
+            _cameras.Select(StoreOf)
+                    .Where(s => s != null)
+                    .Select(s => s!)
+                    .Distinct(System.StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(s => s, System.StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Rebuilds the "SELECT A STORE" dropdown from whatever store codes are currently
@@ -266,7 +276,7 @@ namespace RtspCameraViewer
 
             _suppressStoreSelectionChanged = true;
             StoreSelector.Items.Clear();
-            StoreSelector.Items.Add(new ComboBoxItem { Content = "All Stores", Tag = null });
+            StoreSelector.Items.Add(new ComboBoxItem { Content = "All Classes", Tag = null });
             foreach (var store in stores)
                 StoreSelector.Items.Add(new ComboBoxItem { Content = store, Tag = store });
 
@@ -287,7 +297,7 @@ namespace RtspCameraViewer
 
         private void AddCamera_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new CameraEditDialog { Owner = this };
+            var dialog = new CameraEditDialog(null, ExistingClasses()) { Owner = this };
             if (dialog.ShowDialog() == true)
             {
                 var camera = dialog.Result;
@@ -296,26 +306,6 @@ namespace RtspCameraViewer
                 CreateTile(camera);
                 RefreshLayout();
             }
-        }
-
-        private void ImportExcel_Click(object sender, RoutedEventArgs e)
-        {
-            var dialog = new ImportCamerasDialog(_cameras) { Owner = this };
-            if (dialog.ShowDialog() != true) return;
-
-            foreach (var camera in dialog.NewCameras)
-            {
-                _cameras.Add(camera);
-                CreateTile(camera);
-            }
-
-            CameraStore.Save(_cameras);
-            RefreshLayout();
-
-            var addedText = dialog.NewCameras.Count == 1 ? "1 camera" : $"{dialog.NewCameras.Count} cameras";
-            MessageBox.Show(this,
-                $"Imported: {addedText} added, {dialog.UpdatedCount} updated, {dialog.SkippedCount} skipped (no IP).",
-                "Import Cameras", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private void Tile_RemoveRequested(object sender, RoutedEventArgs e)

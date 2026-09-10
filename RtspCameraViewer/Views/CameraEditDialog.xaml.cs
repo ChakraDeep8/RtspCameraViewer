@@ -1,4 +1,6 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using RtspCameraViewer.Models;
 
@@ -13,7 +15,11 @@ namespace RtspCameraViewer.Views
 
         private readonly bool _isEdit;
 
-        public CameraEditDialog(Camera? existing = null)
+        /// <param name="existingClasses">
+        /// Class names already in use, offered in the picker so a camera can be added to an
+        /// existing group rather than everyone re-typing the name slightly differently.
+        /// </param>
+        public CameraEditDialog(Camera? existing = null, IEnumerable<string>? existingClasses = null)
         {
             InitializeComponent();
             _isEdit = existing != null;
@@ -26,6 +32,15 @@ namespace RtspCameraViewer.Views
             UrlBox.Text = Result.Url;
             UserBox.Text = Result.Username ?? "";
             PassBox.Password = Result.Password ?? "";
+
+            foreach (var name in (existingClasses ?? Enumerable.Empty<string>())
+                     .Where(c => !string.IsNullOrWhiteSpace(c))
+                     .Distinct(StringComparer.OrdinalIgnoreCase)
+                     .OrderBy(c => c, StringComparer.OrdinalIgnoreCase))
+            {
+                ClassCombo.Items.Add(name);
+            }
+            ClassCombo.Text = Result.Store ?? "";
         }
 
         private void Save_Click(object sender, RoutedEventArgs e)
@@ -53,6 +68,9 @@ namespace RtspCameraViewer.Views
 
             Result.Name = name;
             Result.Url = url;
+            // Blank means "no class"; anything else groups this camera under that name.
+            var className = ClassCombo.Text?.Trim();
+            Result.Store = string.IsNullOrWhiteSpace(className) ? null : className;
             Result.Username = string.IsNullOrWhiteSpace(UserBox.Text) ? null : UserBox.Text.Trim();
             Result.Password = string.IsNullOrEmpty(PassBox.Password) ? null : PassBox.Password;
 
