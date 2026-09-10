@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -76,10 +76,11 @@ namespace RtspCameraViewer.Controls
 
             MouseEnter += (_, _) => HoverToolbar.Visibility = Visibility.Visible;
             MouseLeave += (_, _) => HoverToolbar.Visibility = Visibility.Collapsed;
-            // Double-click anywhere on the cell expands it. A single click is deliberately inert:
-            // it was previously enough to expand, which fired on any stray click while scanning
-            // the grid. Hover-toolbar buttons handle their own clicks before they bubble here, so
-            // Reconnect/Remove/Fullscreen keep working.
+            // Double-click the name bar to expand. A single click is deliberately inert: it was
+            // previously enough to expand, which fired on any stray click while scanning the grid.
+            // Only the name bar responds, not the video - the video surface is a native window
+            // that consumes mouse input before WPF ever sees it, so a double-click there cannot
+            // reach this handler. The toolbar button is the discoverable route either way.
             MouseLeftButtonDown += (_, e) =>
             {
                 if (e.ClickCount == 2)
@@ -241,11 +242,6 @@ namespace RtspCameraViewer.Controls
             bool live = status == CameraStatus.Live;
             PlaceholderPanel.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
 
-            // The video host is a native window and paints over any WPF drawn in the same space,
-            // so the placeholder alone could not hide it - a stopped tile showed the video
-            // surface's blank white rather than the dark placeholder. Taking the host out of the
-            // render while it is not live is what actually lets the placeholder show.
-            Video.Visibility = live ? Visibility.Visible : Visibility.Hidden;
             PlaceholderText.Text = status switch
             {
                 CameraStatus.Connecting => "Connecting…",

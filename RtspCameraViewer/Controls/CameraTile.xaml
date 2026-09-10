@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="RtspCameraViewer.Controls.CameraTile"
+<UserControl x:Class="RtspCameraViewer.Controls.CameraTile"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
@@ -41,30 +41,41 @@
 
                     <!-- Also lives in the header: buttons floated over the video were invisible
                          for the same airspace reason. -->
+                    <!-- Segoe MDL2 Assets, not literal symbols: the obvious characters for
+                         these (U+26F6, U+27F3, U+2715) are absent from Segoe UI, so the buttons
+                         rendered completely blank. -->
                     <!-- Collapsed, not just transparent: at Opacity 0 it still reserved its
                          width, which squeezed the camera name into an ellipsis on narrow tiles. -->
                     <StackPanel x:Name="HoverToolbar" Grid.Column="3" Orientation="Horizontal"
                                 VerticalAlignment="Center" Visibility="Collapsed" Margin="8,0,0,0">
-                        <Button x:Name="FullscreenButton" Content="⛶" Width="24" Height="22" Margin="2,0,0,0" FontSize="11"
-                                Click="FullscreenButton_Click" ToolTip="Expand (or double-click the tile)" Style="{StaticResource ToolButton}"/>
-                        <Button x:Name="ReconnectButton" Content="⟳" Width="24" Height="22" Margin="2,0,0,0" FontSize="11"
-                                Click="ReconnectButton_Click" ToolTip="Reconnect" Style="{StaticResource ToolButton}"/>
-                        <Button x:Name="RemoveButton" Content="✕" Width="24" Height="22" Margin="2,0,0,0" FontSize="11"
-                                Click="RemoveButton_Click" ToolTip="Remove camera" Style="{StaticResource ToolButton}"/>
+                        <Button x:Name="FullscreenButton" Content="&#xE740;" FontFamily="Segoe MDL2 Assets" Width="26" Height="24" Margin="2,0,0,0" FontSize="10"
+                                Click="FullscreenButton_Click" ToolTip="Expand this camera (or double-click its name bar)" Style="{StaticResource IconButton}"/>
+                        <Button x:Name="ReconnectButton" Content="&#xE72C;" FontFamily="Segoe MDL2 Assets" Width="26" Height="24" Margin="2,0,0,0" FontSize="10"
+                                Click="ReconnectButton_Click" ToolTip="Reconnect" Style="{StaticResource IconButton}"/>
+                        <Button x:Name="RemoveButton" Content="&#xE711;" FontFamily="Segoe MDL2 Assets" Width="26" Height="24" Margin="2,0,0,0" FontSize="10"
+                                Click="RemoveButton_Click" ToolTip="Remove camera" Style="{StaticResource IconButton}"/>
                     </StackPanel>
                 </Grid>
             </Border>
 
-            <Grid Grid.Row="1">
-                <vlc:VideoView x:Name="Video" Background="Black"/>
+            <!--
+                The placeholder is the VideoView's CONTENT, not a sibling. VideoView renders its
+                content in an overlay window that sits above the video surface, which is the one
+                sanctioned way to draw over it - a sibling Border loses to the native surface and
+                a stopped tile showed the surface's blank white instead.
 
-                <!-- Covers the whole video area while connecting or on error: the video surface
-                     renders white until its first real frame arrives. -->
+                Hiding the VideoView instead was worse: Visibility="Hidden" does not unload it, so
+                the native host window stayed alive untracked and the next show created a SECOND
+                one. The orphan ended up stretched across the whole grid, painting one camera's
+                feed over every other tile.
+            -->
+            <vlc:VideoView x:Name="Video" Grid.Row="1" Background="Black">
                 <Border x:Name="PlaceholderPanel" Background="{StaticResource TileBackground}" Visibility="Visible">
                     <TextBlock x:Name="PlaceholderText" Text="Connecting…" Foreground="{StaticResource TextSecondary}"
                                FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
-            </Grid>
+            </vlc:VideoView>
+
         </Grid>
     </Border>
 </UserControl>

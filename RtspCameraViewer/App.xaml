@@ -36,6 +36,18 @@
                 </Style.Triggers>
             </Style>
 
+            <!--
+                Square icon buttons. ToolButton's 14,8 padding is right for a text button but
+                bigger than a 24px icon button IS, so the glyph was laid out outside the button
+                and clipped - the toolbar read as a row of half-symbols. Padding 0 plus MinWidth 0
+                lets the explicit Width/Height be the whole button and centres the glyph in it.
+            -->
+            <Style TargetType="Button" x:Key="IconButton" BasedOn="{StaticResource ToolButton}">
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="MinWidth" Value="0"/>
+                <Setter Property="MinHeight" Value="0"/>
+            </Style>
+
             <Style TargetType="TextBox" x:Key="InputBox">
                 <Setter Property="Background" Value="#33333D"/>
                 <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>

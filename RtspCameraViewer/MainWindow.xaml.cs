@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -78,26 +78,22 @@ namespace RtspCameraViewer
                 .ThenBy(c => c.Name, System.StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            // A tile being shown in the expand overlay is the logical child of that
-            // ContentControl. Adding it to the grid as well throws "Specified element is already
-            // the logical child of another element", which crashed the app outright whenever the
-            // layout was rebuilt (any store switch) while a tile was expanded. If the expanded
-            // camera is no longer visible under the current filter, close the overlay; otherwise
-            // leave it there and skip it below. Unwound inline rather than calling
-            // ExitFullscreen, which would recurse back into RefreshLayout.
+            // Expanding is just "show one camera": the tile stays in the grid and the grid
+            // narrows to it. Reparenting it into an overlay instead was the wrong shape - the
+            // overlay could not hide the other tiles, because a VideoView's hosted window is
+            // native and survives its WPF parent being collapsed, so seven other feeds carried
+            // on painting around the expanded one. Filtering here means the code below stops
+            // them and takes them out of the tree for real.
             if (_fullscreenTile != null && visible.All(c => c.Id != _fullscreenTile.Camera.Id))
-            {
-                _fullscreenTile.StopPlayback();
-                FullscreenContent.Content = null;
-                FullscreenHost.Visibility = Visibility.Collapsed;
-                _fullscreenTile = null;
-            }
+                SetExpanded(null); // the expanded camera is not in this class - drop back to the grid
+
+            if (_fullscreenTile != null)
+                visible = visible.Where(c => c.Id == _fullscreenTile.Camera.Id).ToList();
 
             GridHost.Children.Clear();
             foreach (var camera in visible)
             {
                 if (!_tiles.TryGetValue(camera.Id, out var tile)) continue;
-                if (ReferenceEquals(tile, _fullscreenTile)) continue; // it lives in the overlay
                 GridHost.Children.Add(tile);
             }
 
@@ -330,20 +326,18 @@ namespace RtspCameraViewer
         private void Tile_FullscreenRequested(object sender, RoutedEventArgs e)
         {
             if (sender is not CameraTile tile) return;
+            SetExpanded(ReferenceEquals(tile, _fullscreenTile) ? null : tile);
+            RefreshLayout();
+        }
 
-            // Stop the stream BEFORE reparenting. Moving the tile hands its VideoView a new
-            // parent window, and doing that while a Direct3D video output is still attached to
-            // the old one kills the process natively — no managed exception, no event log entry,
-            // just a silent exit. Restarting after the move costs a short reconnect and is the
-            // difference between a working expand and a coin flip.
-            tile.StopPlayback("expanding…");
-
-            GridHost.Children.Remove(tile);
-            FullscreenContent.Content = tile;
-            FullscreenHost.Visibility = Visibility.Visible;
+        /// <summary>Expands one camera to fill the grid, or returns to the full grid when null.</summary>
+        private void SetExpanded(CameraTile? tile)
+        {
             _fullscreenTile = tile;
-
-            tile.StartPlayback();
+            ExpandBar.Visibility = tile == null ? Visibility.Collapsed : Visibility.Visible;
+            // The tile carries its own name in its header, so the bar says what STATE
+            // this is and how to leave it rather than repeating the camera name.
+            ExpandNameText.Text = "Expanded  ·  Esc or ✕ to go back to the grid";
         }
 
         private void ExitFullscreen_Click(object sender, RoutedEventArgs e) => ExitFullscreen();
@@ -351,14 +345,8 @@ namespace RtspCameraViewer
         private void ExitFullscreen()
         {
             if (_fullscreenTile == null) return;
-
-            // Same reasoning as the expand path: never reparent a tile that is still streaming.
-            _fullscreenTile.StopPlayback("collapsing…");
-
-            FullscreenContent.Content = null;
-            FullscreenHost.Visibility = Visibility.Collapsed;
-            _fullscreenTile = null;
-            RefreshLayout(); // puts the tile back in the grid and restarts it there
+            SetExpanded(null);
+            RefreshLayout(); // restores the whole grid and restarts the tiles in it
         }
 
         private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
@@ -400,7 +388,7 @@ namespace RtspCameraViewer
         {
             if (e.Key == Key.Escape)
             {
-                if (FullscreenHost.Visibility == Visibility.Visible)
+                if (_fullscreenTile != null)
                     ExitFullscreen();
                 else if (_isAppFullscreen)
                     ToggleAppFullscreen();
