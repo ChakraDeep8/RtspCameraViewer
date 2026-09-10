@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
@@ -57,6 +58,8 @@ namespace RtspCameraViewer
             var tile = new CameraTile(camera, _libVlc);
             tile.FullscreenRequested += Tile_FullscreenRequested;
             tile.RemoveRequested += Tile_RemoveRequested;
+            // The first stream to report its real dimensions re-shapes the grid around them.
+            tile.VideoAspectKnown += UpdateGridShape;
             _tiles[camera.Id] = tile;
             return tile;
         }
@@ -131,6 +134,8 @@ namespace RtspCameraViewer
 
             _ = StartStaggeredAsync(toStart);
 
+            UpdateGridShape();
+
             CameraCountText.Text = visible.Count == 1 ? "1 camera" : $"{visible.Count} cameras";
             if (_selectedStore != null) CameraCountText.Text += $"  ·  store {_selectedStore}";
             if (visible.Count > MaxConcurrentStreams)
@@ -173,6 +178,65 @@ namespace RtspCameraViewer
         /// and frames tear. Cameras beyond the cap stay listed but paused.
         /// </summary>
         private const int MaxConcurrentStreams = 12;
+
+        /// <summary>
+        /// Fallback until a stream reports its real size. Only used before the first frame
+        /// arrives — see ObservedAspect.
+        /// </summary>
+        private const double FallbackAspect = 16.0 / 9.0;
+
+        /// <summary>
+        /// The aspect the grid should shape itself around: whatever the streams actually report.
+        /// Assuming 16:9 for cameras that are nearer 4:3 is what left every tile pillarboxed with
+        /// black bars down both sides.
+        /// </summary>
+        private double ObservedAspect =>
+            _tiles.Values.Select(t => t.VideoAspect).FirstOrDefault(a => a is > 0) ?? FallbackAspect;
+
+        private void GridHost_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateGridShape();
+
+        /// <summary>
+        /// Picks the column count that gives the video the most actual pixels.
+        ///
+        /// Left to itself, UniformGrid lays out a roughly SQUARE arrangement no matter what shape
+        /// the window is. In a wide, short grid area that makes every cell far wider than a 16:9
+        /// frame, so each feed is pillarboxed into a narrow strip with black bars down both sides
+        /// - the video ends up tiny while most of the tile is wasted. Trying every column count
+        /// and keeping whichever maximises the letterboxed video area fixes that, and re-adapts
+        /// whenever the window is resized.
+        /// </summary>
+        private void UpdateGridShape()
+        {
+            int count = GridHost.Children.Count;
+            if (count == 0) return;
+
+            double width = GridHost.ActualWidth, height = GridHost.ActualHeight;
+            if (width <= 0 || height <= 0) return;
+
+            double aspect = ObservedAspect;
+            int bestColumns = 1;
+            double bestArea = -1;
+
+            for (int columns = 1; columns <= count; columns++)
+            {
+                int rows = (int)Math.Ceiling(count / (double)columns);
+                double cellWidth = width / columns;
+                double cellHeight = height / rows;
+
+                // How large the video actually renders once fitted inside that cell.
+                double videoWidth = Math.Min(cellWidth, cellHeight * aspect);
+                double area = videoWidth * (videoWidth / aspect);
+
+                if (area > bestArea)
+                {
+                    bestArea = area;
+                    bestColumns = columns;
+                }
+            }
+
+            GridHost.Columns = bestColumns;
+            GridHost.Rows = (int)Math.Ceiling(count / (double)bestColumns);
+        }
 
         private static string? StoreOf(Camera c) => string.IsNullOrWhiteSpace(c.Store) ? null : c.Store;
 

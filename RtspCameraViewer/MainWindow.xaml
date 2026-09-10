@@ -1,4 +1,4 @@
-<Window x:Class="RtspCameraViewer.MainWindow"
+﻿<Window x:Class="RtspCameraViewer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="RTSP Camera Viewer" Height="800" Width="1200" MinHeight="480" MinWidth="640"
@@ -60,7 +60,7 @@
                        Foreground="{StaticResource TextSecondary}" FontSize="14"
                        HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
 
-            <UniformGrid x:Name="GridHost" />
+            <UniformGrid x:Name="GridHost" SizeChanged="GridHost_SizeChanged"/>
 
             <!-- Expanded-cell overlay: covers just the grid area (not the whole OS window) so a
                  single click on any tile expands it in place; the cross in the corner collapses

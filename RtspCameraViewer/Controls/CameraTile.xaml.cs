@@ -46,6 +46,18 @@ namespace RtspCameraViewer.Controls
         /// <summary>True while this tile is meant to be streaming. False once StopPlayback is
         /// called, until StartPlayback brings it back.</summary>
         public bool IsRunning { get; private set; }
+
+        /// <summary>
+        /// Width/height of the decoded stream, once known. Null until the first frame arrives —
+        /// the real aspect cannot be assumed, and guessing 16:9 for a camera that is closer to
+        /// 4:3 leaves every tile pillarboxed.
+        /// </summary>
+        public double? VideoAspect { get; private set; }
+
+        /// <summary>Raised on the UI thread the first time VideoAspect becomes known.</summary>
+        public event Action? VideoAspectKnown;
+
+        private DispatcherTimer? _aspectProbe;
         private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(5);
 
         public CameraTile(Camera camera, LibVLC libVlc)
@@ -146,7 +158,53 @@ namespace RtspCameraViewer.Controls
                 // BeginInvoke is queued, so this can land after the tile was stopped or disposed.
                 if (_disposed || !IsRunning) return;
                 SetStatus(CameraStatus.Live, "live");
+                StartAspectProbe();
             }));
+
+        /// <summary>
+        /// Polls for the decoded frame size after playback starts. MediaPlayer.Size is not
+        /// populated at the instant the Playing event fires — the video output has not been set
+        /// up yet — so asking once there always came back empty and the host was left assuming
+        /// an aspect instead of knowing one.
+        /// </summary>
+        private void StartAspectProbe()
+        {
+            if (VideoAspect != null || _aspectProbe != null) return;
+
+            int attempts = 0;
+            _aspectProbe = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+            _aspectProbe.Tick += (_, _) =>
+            {
+                attempts++;
+                if (_disposed || !IsRunning || VideoAspect != null || attempts > 20)
+                {
+                    StopAspectProbe();
+                    return;
+                }
+
+                var player = _mediaPlayer;
+                if (player == null) return;
+
+                try
+                {
+                    uint width = 0, height = 0;
+                    if (player.Size(0, ref width, ref height) && width > 0 && height > 0)
+                    {
+                        VideoAspect = width / (double)height;
+                        StopAspectProbe();
+                        VideoAspectKnown?.Invoke();
+                    }
+                }
+                catch { /* keep trying until the attempt budget runs out */ }
+            };
+            _aspectProbe.Start();
+        }
+
+        private void StopAspectProbe()
+        {
+            _aspectProbe?.Stop();
+            _aspectProbe = null;
+        }
 
         private void OnPlayerFailed(object? sender, EventArgs e) =>
             Dispatcher.BeginInvoke(new Action(HandlePlaybackFailure));
@@ -169,6 +227,7 @@ namespace RtspCameraViewer.Controls
             if (!IsRunning) return;
             IsRunning = false;
             _reconnectTimer.Stop();
+            StopAspectProbe();
             DisposeMediaPlayer();
             SetStatus(CameraStatus.Stopped, label);
         }
