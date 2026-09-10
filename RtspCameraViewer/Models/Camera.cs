@@ -39,6 +39,17 @@ namespace RtspCameraViewer.Models
         public StreamQuality Quality { get; set; } = StreamQuality.AsConfigured;
 
         /// <summary>
+        /// Shape to display this camera at, as "W:H" (e.g. "1080:720"), or null to show the
+        /// stream exactly as it arrives. This is a DISPLAY setting: the decoder still receives
+        /// whatever the camera sends, and the rendered pixel size is the tile's, so this changes
+        /// the picture's shape rather than its resolution.
+        /// </summary>
+        public string? DisplayAspect { get; set; }
+
+        /// <summary>How to reach <see cref="DisplayAspect"/> — by stretching, or by cropping.</summary>
+        public DisplayFit DisplayFit { get; set; } = DisplayFit.Stretch;
+
+        /// <summary>
         /// Builds the effective RTSP URL used for playback: the saved URL pointed at the
         /// preferred stream, with credentials injected if they were supplied separately.
         /// </summary>

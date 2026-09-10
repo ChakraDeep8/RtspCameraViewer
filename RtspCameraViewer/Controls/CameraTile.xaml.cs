@@ -7,6 +7,7 @@ using System.Threading;
 using System.Windows.Threading;
 using LibVLCSharp.Shared;
 using RtspCameraViewer.Models;
+using RtspCameraViewer.Services;
 using MediaPlayer = LibVLCSharp.Shared.MediaPlayer;
 
 namespace RtspCameraViewer.Controls
@@ -114,6 +115,17 @@ namespace RtspCameraViewer.Controls
                 {
                     EnableHardwareDecoding = true
                 };
+
+                // Display shape, if the user asked for one. Set on the player rather than as a
+                // media option: video filters are not reliably honoured per-media, whereas these
+                // two properties are, and they are what the shape actually needs.
+                if (!string.IsNullOrWhiteSpace(Camera.DisplayAspect))
+                {
+                    if (Camera.DisplayFit == DisplayFit.Crop)
+                        _mediaPlayer.CropGeometry = Camera.DisplayAspect;
+                    else
+                        _mediaPlayer.AspectRatio = Camera.DisplayAspect;
+                }
                 Video.MediaPlayer = _mediaPlayer;
 
                 using var media = new Media(_libVlc, url, FromType.FromLocation);

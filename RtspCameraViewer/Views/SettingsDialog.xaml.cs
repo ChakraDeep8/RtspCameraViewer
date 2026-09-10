@@ -50,6 +50,7 @@ namespace RtspCameraViewer.Views
         /// would reappear the next time anything saved.
         /// </summary>
         private readonly Dictionary<string, StreamQuality> _qualityOnOpen;
+        private readonly Dictionary<string, (string? Aspect, DisplayFit Fit)> _shapeOnOpen;
 
         /// <summary>True when anything was changed, so the host knows to save and restart streams.</summary>
         public bool Changed { get; private set; }
@@ -59,6 +60,7 @@ namespace RtspCameraViewer.Views
             InitializeComponent();
             _cameras = cameras;
             _qualityOnOpen = cameras.ToDictionary(c => c.Id, c => c.Quality);
+            _shapeOnOpen = cameras.ToDictionary(c => c.Id, c => (c.DisplayAspect, c.DisplayFit));
 
             // --- quality scope: all cameras, or one class ---
             ScopeCombo.Items.Add(AllCamerasScope);
@@ -71,6 +73,13 @@ namespace RtspCameraViewer.Views
             QualityCombo.Items.Add(new ComboBoxItem { Content = "Full resolution (main stream)", Tag = StreamQuality.Main });
             QualityCombo.Items.Add(new ComboBoxItem { Content = "Low resolution (sub stream)", Tag = StreamQuality.Sub });
             QualityCombo.SelectedIndex = 0;
+
+            foreach (var shape in DisplayShape.All) ShapeCombo.Items.Add(shape);
+            ShapeCombo.SelectedIndex = 0;
+
+            FitCombo.Items.Add(new ComboBoxItem { Content = "Stretch to fill", Tag = DisplayFit.Stretch });
+            FitCombo.Items.Add(new ComboBoxItem { Content = "Crop to fill", Tag = DisplayFit.Crop });
+            FitCombo.SelectedIndex = 0;
 
             // --- classes ---
             foreach (var name in ClassNames())
@@ -85,6 +94,7 @@ namespace RtspCameraViewer.Views
             ClassList.ItemsSource = _classes;
 
             UpdateImpact();
+            UpdateShapeNote();
         }
 
         private IEnumerable<string> ClassNames() =>
@@ -111,7 +121,42 @@ namespace RtspCameraViewer.Views
         private StreamQuality SelectedQuality =>
             QualityCombo.SelectedItem is ComboBoxItem { Tag: StreamQuality q } ? q : StreamQuality.AsConfigured;
 
-        private void Scope_Changed(object sender, SelectionChangedEventArgs e) => UpdateImpact();
+        private DisplayShape SelectedShape =>
+            ShapeCombo.SelectedItem as DisplayShape ?? DisplayShape.Native;
+
+        private DisplayFit SelectedFit =>
+            FitCombo.SelectedItem is ComboBoxItem { Tag: DisplayFit f } ? f : DisplayFit.Stretch;
+
+        private void Shape_Changed(object sender, SelectionChangedEventArgs e) => UpdateShapeNote();
+
+        /// <summary>
+        /// Spells out what the shape setting does to THESE cameras. A stream is displayed at the
+        /// tile's pixel size whatever happens here, so calling this a resolution change would be
+        /// a lie; and forcing a landscape shape on a portrait camera either squashes people or
+        /// cuts most of the room away, which the user should know before saving rather than
+        /// after.
+        /// </summary>
+        private void UpdateShapeNote()
+        {
+            if (ShapeNoteText == null) return;
+
+            var shape = SelectedShape;
+            if (shape.Aspect == null)
+            {
+                ShapeNoteText.Text = "Shows each stream at its own shape, letterboxed into the tile.";
+                FitCombo.IsEnabled = false;
+                return;
+            }
+
+            FitCombo.IsEnabled = true;
+            ShapeNoteText.Text = SelectedFit == DisplayFit.Crop
+                ? $"Crops each stream to {shape.Label} — nothing is distorted, but whatever falls " +
+                  "outside that shape is cut off. A portrait camera loses most of its height."
+                : $"Stretches each stream to fill {shape.Label} — the whole picture stays visible, " +
+                  "but a stream shaped differently will look squashed or elongated.";
+        }
+
+        private void Scope_Changed(object sender, SelectionChangedEventArgs e) { UpdateImpact(); UpdateShapeNote(); }
         private void Quality_Changed(object sender, SelectionChangedEventArgs e) => UpdateImpact();
 
         /// <summary>
@@ -134,7 +179,7 @@ namespace RtspCameraViewer.Views
                 return;
             }
 
-            ApplyQualityButton.IsEnabled = SelectedQuality != StreamQuality.AsConfigured && switchable > 0;
+            ApplyQualityButton.IsEnabled = total > 0;
 
             if (switchable == 0)
             {
@@ -159,24 +204,51 @@ namespace RtspCameraViewer.Views
         private void ApplyQuality_Click(object sender, RoutedEventArgs e)
         {
             var quality = SelectedQuality;
-            if (quality == StreamQuality.AsConfigured) return;
+            var shape = SelectedShape;
+            var fit = SelectedFit;
+            var scoped = ScopedCameras();
+            var notes = new List<string>();
 
-            int applied = 0;
-            foreach (var camera in ScopedCameras().Where(c => StreamQualityRewriter.CanSwitch(c.Url)))
+            if (quality != StreamQuality.AsConfigured)
             {
-                if (camera.Quality == quality) continue;
-                camera.Quality = quality;
-                applied++;
+                int applied = 0;
+                foreach (var camera in scoped.Where(c => StreamQualityRewriter.CanSwitch(c.Url)))
+                {
+                    if (camera.Quality == quality) continue;
+                    camera.Quality = quality;
+                    applied++;
+                }
+                if (applied > 0)
+                {
+                    notes.Add($"{applied} set to {StreamQualityRewriter.Describe(quality)}");
+                    Changed = true;
+                }
             }
 
-            Changed |= applied > 0;
+            // The shape applies to every camera in scope, not only the switchable ones: it is a
+            // display setting and has nothing to do with what the device can encode.
+            int shaped = 0;
+            foreach (var camera in scoped)
+            {
+                if (camera.DisplayAspect == shape.Aspect && camera.DisplayFit == fit) continue;
+                camera.DisplayAspect = shape.Aspect;
+                camera.DisplayFit = fit;
+                shaped++;
+            }
+            if (shaped > 0)
+            {
+                notes.Add(shape.Aspect == null
+                    ? $"{shaped} back to native shape"
+                    : $"{shaped} shown at {shape.Label}");
+                Changed = true;
+            }
+
             HideError();
             UpdateImpact();
 
-            QualityImpactText.Text = applied == 0
+            QualityImpactText.Text = notes.Count == 0
                 ? "Already set — nothing to change."
-                : $"Set {applied} camera{(applied == 1 ? "" : "s")} to {StreamQualityRewriter.Describe(quality)}. " +
-                  "Save to reconnect them.";
+                : string.Join("; ", notes) + ". Save to reconnect them.";
         }
 
         // =====================================================================
@@ -221,8 +293,15 @@ namespace RtspCameraViewer.Views
         private void Cancel_Click(object sender, RoutedEventArgs e)
         {
             foreach (var camera in _cameras)
-                if (_qualityOnOpen.TryGetValue(camera.Id, out var original))
-                    camera.Quality = original;
+            {
+                if (_qualityOnOpen.TryGetValue(camera.Id, out var quality))
+                    camera.Quality = quality;
+                if (_shapeOnOpen.TryGetValue(camera.Id, out var shape))
+                {
+                    camera.DisplayAspect = shape.Aspect;
+                    camera.DisplayFit = shape.Fit;
+                }
+            }
 
             Changed = false;
             DialogResult = false;
