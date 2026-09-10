@@ -294,7 +294,13 @@ namespace RtspCameraViewer.Controls
             _disposed = true;
             IsRunning = false;
             _reconnectTimer.Stop();
+            StopAspectProbe();
             DisposeMediaPlayer();
+
+            // Disposing the VideoView is what actually destroys its native video window and the
+            // overlay window that hosts the placeholder. Dropping the tile without this leaves
+            // both on screen, unowned, painting over whatever replaced it.
+            try { Video.Dispose(); } catch { /* already torn down */ }
         }
     }
 }

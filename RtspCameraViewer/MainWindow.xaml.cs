@@ -37,9 +37,9 @@ namespace RtspCameraViewer
             _libVlc = new LibVLC(enableDebugLogs: false);
 
             _cameras = CameraStore.Load();
-            foreach (var camera in _cameras)
-                CreateTile(camera);
-
+            // Tiles are created by RefreshLayout, for the cameras actually on screen. Creating
+            // all of them up front left tiles alive outside the visual tree, which is exactly
+            // what leaks video windows (see the pruning in RefreshLayout).
             RefreshLayout();
 
             StateChanged += (_, _) => UpdateRestoreIcon();
@@ -90,12 +90,28 @@ namespace RtspCameraViewer
             if (_fullscreenTile != null)
                 visible = visible.Where(c => c.Id == _fullscreenTile.Camera.Id).ToList();
 
+            // Tear down the tiles that are not on screen, rather than merely un-parenting them.
+            // A VideoView's video and overlay windows are NATIVE and outlive their WPF parent, so
+            // a tile left alive outside the tree kept painting - filtering to one class, or
+            // expanding one camera, left a full grid of ghost panels floating over the result.
+            var visibleIds = new HashSet<string>(visible.Select(c => c.Id));
+            foreach (var id in _tiles.Keys.Where(id => !visibleIds.Contains(id)).ToList())
+            {
+                _tiles[id].Dispose();
+                _tiles.Remove(id);
+            }
+
             GridHost.Children.Clear();
             foreach (var camera in visible)
             {
-                if (!_tiles.TryGetValue(camera.Id, out var tile)) continue;
+                if (!_tiles.TryGetValue(camera.Id, out var tile)) tile = CreateTile(camera);
                 GridHost.Children.Add(tile);
             }
+
+            // _fullscreenTile must point at a LIVE tile: if the expanded camera's tile was just
+            // rebuilt, the old reference is disposed and would expand nothing.
+            if (_fullscreenTile != null && _tiles.TryGetValue(_fullscreenTile.Camera.Id, out var current))
+                _fullscreenTile = current;
 
             // Only the tiles actually on screen may stream. Previously a filtered-out tile was
             // merely removed from the visual tree while its MediaPlayer kept decoding, so
