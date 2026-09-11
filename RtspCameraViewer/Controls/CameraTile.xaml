@@ -9,73 +9,98 @@
     <Border Background="{StaticResource TileBackground}" CornerRadius="8" ClipToBounds="True"
             BorderBrush="#3A3A44" BorderThickness="1" Margin="4">
         <!--
-            The header sits in its OWN ROW, above the video, rather than floating over it.
-            VideoView hosts a native window, and native content always paints on top of WPF
-            content regardless of z-order (the classic airspace problem) — so the old overlaid
-            name bar was simply covered by the feed and unreadable. Keeping the header out of
-            the video's rectangle is the only reliable fix, and it makes the name legible over
-            bright scenes too, which a translucent overlay never managed.
+            Move arrows live in thin edge strips AROUND the tile content, not over the video.
+            The video is a native window that paints over anything WPF draws in its rectangle,
+            so an arrow overlaid on the feed would simply be invisible - the same reason the
+            name bar sits in its own row. A strip stays a few pixels wide until the mouse is on
+            that edge, then widens to show its arrow.
         -->
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
 
-            <Border Grid.Row="0" Background="#22222A" Padding="8,5">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-
-                    <Ellipse x:Name="StatusDot" Width="9" Height="9" Fill="{StaticResource WarnBrush}"
-                             VerticalAlignment="Center" Margin="0,0,7,0"/>
-                    <TextBlock x:Name="NameText" Grid.Column="1" Text="Camera" Foreground="{StaticResource TextPrimary}"
-                               FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
-                    <TextBlock x:Name="StatusText" Grid.Column="2" Text="" Foreground="{StaticResource TextSecondary}"
-                               FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
-
-                    <!-- Also lives in the header: buttons floated over the video were invisible
-                         for the same airspace reason. -->
-                    <!-- Segoe MDL2 Assets, not literal symbols: the obvious characters for
-                         these (U+26F6, U+27F3, U+2715) are absent from Segoe UI, so the buttons
-                         rendered completely blank. -->
-                    <!-- Collapsed, not just transparent: at Opacity 0 it still reserved its
-                         width, which squeezed the camera name into an ellipsis on narrow tiles. -->
-                    <StackPanel x:Name="HoverToolbar" Grid.Column="3" Orientation="Horizontal"
-                                VerticalAlignment="Center" Visibility="Collapsed" Margin="8,0,0,0">
-                        <Button x:Name="FullscreenButton" Content="&#xE740;" FontFamily="Segoe MDL2 Assets" Width="26" Height="24" Margin="2,0,0,0" FontSize="10"
-                                Click="FullscreenButton_Click" ToolTip="Expand this camera (or double-click its name bar)" Style="{StaticResource IconButton}"/>
-                        <Button x:Name="ReconnectButton" Content="&#xE72C;" FontFamily="Segoe MDL2 Assets" Width="26" Height="24" Margin="2,0,0,0" FontSize="10"
-                                Click="ReconnectButton_Click" ToolTip="Reconnect" Style="{StaticResource IconButton}"/>
-                        <Button x:Name="RemoveButton" Content="&#xE711;" FontFamily="Segoe MDL2 Assets" Width="26" Height="24" Margin="2,0,0,0" FontSize="10"
-                                Click="RemoveButton_Click" ToolTip="Remove camera" Style="{StaticResource IconButton}"/>
-                    </StackPanel>
-                </Grid>
+            <Border x:Name="EdgeUp" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Height="6" Tag="Up"
+                    Background="{StaticResource TileBackground}" MouseEnter="Edge_MouseEnter" MouseLeave="Edge_MouseLeave">
+                <Button x:Name="MoveUpButton" Tag="Up" Content="&#xE70E;" FontFamily="Segoe MDL2 Assets" FontSize="10"
+                        Width="36" Height="18" Visibility="Collapsed" Click="Move_Click"
+                        ToolTip="Move up" Style="{StaticResource IconButton}"/>
+            </Border>
+            <Border x:Name="EdgeDown" Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Height="6" Tag="Down"
+                    Background="{StaticResource TileBackground}" MouseEnter="Edge_MouseEnter" MouseLeave="Edge_MouseLeave">
+                <Button x:Name="MoveDownButton" Tag="Down" Content="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="10"
+                        Width="36" Height="18" Visibility="Collapsed" Click="Move_Click"
+                        ToolTip="Move down" Style="{StaticResource IconButton}"/>
+            </Border>
+            <Border x:Name="EdgeLeft" Grid.Row="1" Grid.Column="0" Width="6" Tag="Left"
+                    Background="{StaticResource TileBackground}" MouseEnter="Edge_MouseEnter" MouseLeave="Edge_MouseLeave">
+                <Button x:Name="MoveLeftButton" Tag="Left" Content="&#xE76B;" FontFamily="Segoe MDL2 Assets" FontSize="10"
+                        Width="18" Height="36" Visibility="Collapsed" Click="Move_Click"
+                        ToolTip="Move left" Style="{StaticResource IconButton}"/>
+            </Border>
+            <Border x:Name="EdgeRight" Grid.Row="1" Grid.Column="2" Width="6" Tag="Right"
+                    Background="{StaticResource TileBackground}" MouseEnter="Edge_MouseEnter" MouseLeave="Edge_MouseLeave">
+                <Button x:Name="MoveRightButton" Tag="Right" Content="&#xE76C;" FontFamily="Segoe MDL2 Assets" FontSize="10"
+                        Width="18" Height="36" Visibility="Collapsed" Click="Move_Click"
+                        ToolTip="Move right" Style="{StaticResource IconButton}"/>
             </Border>
 
-            <!--
-                The placeholder is the VideoView's CONTENT, not a sibling. VideoView renders its
-                content in an overlay window that sits above the video surface, which is the one
-                sanctioned way to draw over it - a sibling Border loses to the native surface and
-                a stopped tile showed the surface's blank white instead.
+            <!-- Tile content: header row above the video (see note on the edge strips). -->
+            <Grid Grid.Row="1" Grid.Column="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-                Hiding the VideoView instead was worse: Visibility="Hidden" does not unload it, so
-                the native host window stayed alive untracked and the next show created a SECOND
-                one. The orphan ended up stretched across the whole grid, painting one camera's
-                feed over every other tile.
-            -->
-            <vlc:VideoView x:Name="Video" Grid.Row="1" Background="Black">
-                <Border x:Name="PlaceholderPanel" Background="{StaticResource TileBackground}" Visibility="Visible">
-                    <TextBlock x:Name="PlaceholderText" Text="Connecting…" Foreground="{StaticResource TextSecondary}"
-                               FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <Border Grid.Row="0" Background="#22222A" Padding="8,5">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Ellipse x:Name="StatusDot" Width="9" Height="9" Fill="{StaticResource WarnBrush}"
+                                 VerticalAlignment="Center" Margin="0,0,7,0"/>
+                        <TextBlock x:Name="NameText" Grid.Column="1" Text="Camera" Foreground="{StaticResource TextPrimary}"
+                                   FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+                        <TextBlock x:Name="StatusText" Grid.Column="2" Text="" Foreground="{StaticResource TextSecondary}"
+                                   FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
+
+                        <!-- Segoe MDL2 Assets, not literal symbols: the obvious characters are absent
+                             from Segoe UI and rendered blank. Collapsed rather than transparent, so
+                             it does not reserve width and squeeze the name when hidden. -->
+                        <StackPanel x:Name="HoverToolbar" Grid.Column="3" Orientation="Horizontal"
+                                    VerticalAlignment="Center" Visibility="Collapsed" Margin="8,0,0,0">
+                            <Button x:Name="FullscreenButton" Content="&#xE740;" FontFamily="Segoe MDL2 Assets" Width="26" Height="24" Margin="2,0,0,0" FontSize="10"
+                                    Click="FullscreenButton_Click" ToolTip="Expand (or double-click the tile)" Style="{StaticResource IconButton}"/>
+                            <Button x:Name="ReconnectButton" Content="&#xE72C;" FontFamily="Segoe MDL2 Assets" Width="26" Height="24" Margin="2,0,0,0" FontSize="10"
+                                    Click="ReconnectButton_Click" ToolTip="Reconnect" Style="{StaticResource IconButton}"/>
+                            <Button x:Name="RemoveButton" Content="&#xE711;" FontFamily="Segoe MDL2 Assets" Width="26" Height="24" Margin="2,0,0,0" FontSize="10"
+                                    Click="RemoveButton_Click" ToolTip="Remove camera" Style="{StaticResource IconButton}"/>
+                        </StackPanel>
+                    </Grid>
                 </Border>
-            </vlc:VideoView>
 
+                <!-- The placeholder is the VideoView's CONTENT, not a sibling: VideoView renders its
+                     content in an overlay window above the video surface, the one sanctioned way to
+                     draw over it. -->
+                <vlc:VideoView x:Name="Video" Grid.Row="1" Background="Black">
+                    <Border x:Name="PlaceholderPanel" Background="{StaticResource TileBackground}" Visibility="Visible">
+                        <TextBlock x:Name="PlaceholderText" Text="Connecting…" Foreground="{StaticResource TextSecondary}"
+                                   FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                </vlc:VideoView>
+            </Grid>
         </Grid>
     </Border>
 </UserControl>

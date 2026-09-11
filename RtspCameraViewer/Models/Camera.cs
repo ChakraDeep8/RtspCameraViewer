@@ -50,6 +50,13 @@ namespace RtspCameraViewer.Models
         public DisplayFit DisplayFit { get; set; } = DisplayFit.Stretch;
 
         /// <summary>
+        /// Position in the grid, set by the move arrows. One global sequence across every
+        /// class, so an order chosen in a filtered view stays consistent in All Classes.
+        /// Null until first assigned; unassigned cameras are appended after the ordered ones.
+        /// </summary>
+        public int? Order { get; set; }
+
+        /// <summary>
         /// Builds the effective RTSP URL used for playback: the saved URL pointed at the
         /// preferred stream, with credentials injected if they were supplied separately.
         /// </summary>

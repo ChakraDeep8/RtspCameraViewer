@@ -58,6 +58,7 @@ namespace RtspCameraViewer
             var tile = new CameraTile(camera, _libVlc);
             tile.FullscreenRequested += Tile_FullscreenRequested;
             tile.RemoveRequested += Tile_RemoveRequested;
+            tile.MoveRequested += Tile_MoveRequested;
             // The first stream to report its real dimensions re-shapes the grid around them.
             tile.VideoAspectKnown += UpdateGridShape;
             _tiles[camera.Id] = tile;
@@ -68,13 +69,14 @@ namespace RtspCameraViewer
         {
             RefreshStoreBar();
 
-            // Grouped storewise (unassigned cameras last) even in "All Stores", so the grid
-            // always reads store-by-store; filtered further to one store when selected.
+            // The user's own order (set with the move arrows), filtered to one class when selected.
+            // Cameras that have never been placed are slotted in class-by-class, so a fresh list
+            // still reads store-by-store until the user rearranges it.
+            EnsureOrder();
             var visible = (_selectedStore == null
                     ? _cameras.AsEnumerable()
                     : _cameras.Where(c => string.Equals(StoreOf(c), _selectedStore, System.StringComparison.OrdinalIgnoreCase)))
-                .OrderBy(c => StoreOf(c) == null ? 1 : 0)
-                .ThenBy(c => StoreOf(c), System.StringComparer.OrdinalIgnoreCase)
+                .OrderBy(c => c.Order ?? int.MaxValue)
                 .ThenBy(c => c.Name, System.StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
@@ -101,11 +103,16 @@ namespace RtspCameraViewer
                 _tiles.Remove(id);
             }
 
-            GridHost.Children.Clear();
-            foreach (var camera in visible)
+            var desired = visible.Select(c => _tiles.TryGetValue(c.Id, out var t) ? t : CreateTile(c)).ToList();
+
+            // Leave the tree alone when it already matches. Rebuilding takes every tile out and puts
+            // it back, and a VideoView re-parented while its video output is attached is exactly
+            // what killed the process natively before. A move rearranges the two tiles it touches
+            // itself, stopped first, and this pass must not then shuffle all the others.
+            if (!GridHost.Children.Cast<UIElement>().SequenceEqual(desired))
             {
-                if (!_tiles.TryGetValue(camera.Id, out var tile)) tile = CreateTile(camera);
-                GridHost.Children.Add(tile);
+                GridHost.Children.Clear();
+                foreach (var tile in desired) GridHost.Children.Add(tile);
             }
 
             // _fullscreenTile must point at a LIVE tile: if the expanded camera's tile was just
@@ -248,6 +255,90 @@ namespace RtspCameraViewer
 
             GridHost.Columns = bestColumns;
             GridHost.Rows = (int)Math.Ceiling(count / (double)bestColumns);
+            UpdateMoveAvailability();
+        }
+
+        /// <summary>
+        /// Gives every camera a place in the grid order. Existing positions are kept; cameras
+        /// without one (new, imported, or everything on the first run) are appended in
+        /// class-then-name order so they land grouped rather than scattered.
+        /// </summary>
+        private void EnsureOrder()
+        {
+            if (_cameras.All(c => c.Order.HasValue)) return;
+
+            int next = _cameras.Where(c => c.Order.HasValue).Select(c => c.Order!.Value).DefaultIfEmpty(-1).Max() + 1;
+            foreach (var camera in _cameras
+                         .Where(c => !c.Order.HasValue)
+                         .OrderBy(c => StoreOf(c) == null ? 1 : 0)
+                         .ThenBy(c => StoreOf(c), System.StringComparer.OrdinalIgnoreCase)
+                         .ThenBy(c => c.Name, System.StringComparer.OrdinalIgnoreCase)
+                         .ToList())
+            {
+                camera.Order = next++;
+            }
+            CameraStore.Save(_cameras);
+        }
+
+        /// <summary>Tells each tile which arrows lead somewhere from its current cell.</summary>
+        private void UpdateMoveAvailability()
+        {
+            var tiles = GridHost.Children.OfType<CameraTile>().ToList();
+            int columns = Math.Max(1, GridHost.Columns);
+            // Nothing to rearrange in the expanded single-camera view.
+            bool grid = _fullscreenTile == null && tiles.Count > 1;
+
+            for (int i = 0; i < tiles.Count; i++)
+            {
+                tiles[i].SetMoveAvailability(
+                    up: grid && i - columns >= 0,
+                    down: grid && i + columns < tiles.Count,
+                    left: grid && i > 0,
+                    right: grid && i < tiles.Count - 1);
+            }
+        }
+
+        /// <summary>
+        /// Swaps a camera with its neighbour in the given direction. Left and right step through
+        /// reading order (wrapping across row ends); up and down swap with the cell a whole row
+        /// away. What is swapped is the stored position, so it survives restarts and holds in
+        /// every view that shows both cameras.
+        /// </summary>
+        private void Tile_MoveRequested(CameraTile tile, MoveDirection direction)
+        {
+            var tiles = GridHost.Children.OfType<CameraTile>().ToList();
+            int index = tiles.IndexOf(tile);
+            if (index < 0) return;
+
+            int columns = Math.Max(1, GridHost.Columns);
+            int target = direction switch
+            {
+                MoveDirection.Up => index - columns,
+                MoveDirection.Down => index + columns,
+                MoveDirection.Left => index - 1,
+                _ => index + 1
+            };
+            if (target < 0 || target >= tiles.Count) return;
+
+            var other = tiles[target];
+            (tile.Camera.Order, other.Camera.Order) = (other.Camera.Order, tile.Camera.Order);
+
+            // Stop both BEFORE touching the tree: moving a VideoView while its video output is
+            // attached kills the process natively. RefreshLayout restarts whichever of the two
+            // are still inside the streaming limit at their new positions.
+            tile.StopPlayback("moving…");
+            other.StopPlayback("moving…");
+
+            int lo = Math.Min(index, target), hi = Math.Max(index, target);
+            var first = tiles[lo];
+            var second = tiles[hi];
+            GridHost.Children.RemoveAt(hi);
+            GridHost.Children.RemoveAt(lo);
+            GridHost.Children.Insert(lo, second);
+            GridHost.Children.Insert(hi, first);
+
+            CameraStore.Save(_cameras);
+            RefreshLayout();
         }
 
         /// <summary>Class name a camera belongs to, or null when it has not been given one.</summary>
