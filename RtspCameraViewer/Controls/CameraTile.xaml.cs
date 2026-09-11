@@ -1,8 +1,10 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Threading;
 using System.Windows.Threading;
 using LibVLCSharp.Shared;
@@ -44,12 +46,16 @@ namespace RtspCameraViewer.Controls
         /// <summary>Raised when one of the edge arrows is clicked.</summary>
         public event Action<CameraTile, MoveDirection>? MoveRequested;
 
-        private const double EdgeIdle = 6;
-        private const double EdgeActive = 22;
-
         // Which moves make sense from this tile's current cell, set by the host after each layout.
-        // An edge with nowhere to go never widens, so a dead arrow is never offered.
+        // An edge with nowhere to go never shows its arrow, so a dead arrow is never offered.
         private bool _canUp, _canDown, _canLeft, _canRight;
+
+        private static readonly Duration ArrowFade = new(TimeSpan.FromMilliseconds(150));
+        private const double ArrowInset = 8;
+
+        /// <summary>Arrows that should currently be showing; a fade-out only closes a popup still unwanted.</summary>
+        private readonly HashSet<MoveDirection> _arrowsWanted = new();
+        private DispatcherTimer? _arrowCheck;
 
         private readonly LibVLC _libVlc;
         private MediaPlayer? _mediaPlayer;
@@ -95,10 +101,18 @@ namespace RtspCameraViewer.Controls
             };
 
             MouseEnter += (_, _) => HoverToolbar.Visibility = Visibility.Visible;
-            MouseLeave += (_, _) =>
+            MouseLeave += (_, _) => HoverToolbar.Visibility = Visibility.Collapsed;
+
+            // Popups are separate windows: they must not outlive the tile, and must not float over
+            // other applications once this one is no longer in front.
+            Loaded += (_, _) =>
             {
-                HoverToolbar.Visibility = Visibility.Collapsed;
-                CollapseAllEdges();
+                if (Window.GetWindow(this) is { } host) host.Deactivated += Host_Deactivated;
+            };
+            Unloaded += (_, _) =>
+            {
+                if (Window.GetWindow(this) is { } host) host.Deactivated -= Host_Deactivated;
+                HideAllArrows(immediate: true);
             };
             // Double-click the name bar to expand. A single click is deliberately inert: it was
             // previously enough to expand, which fired on any stray click while scanning the grid.
@@ -308,7 +322,7 @@ namespace RtspCameraViewer.Controls
         public void SetMoveAvailability(bool up, bool down, bool left, bool right)
         {
             _canUp = up; _canDown = down; _canLeft = left; _canRight = right;
-            CollapseAllEdges();
+            HideAllArrows(immediate: true);
         }
 
         private bool CanMove(MoveDirection d) => d switch
@@ -322,37 +336,135 @@ namespace RtspCameraViewer.Controls
         private static MoveDirection DirectionOf(object sender) =>
             Enum.Parse<MoveDirection>((string)((FrameworkElement)sender).Tag);
 
+        private Popup PopupFor(MoveDirection d) => d switch
+        {
+            MoveDirection.Up => UpArrowPopup,
+            MoveDirection.Down => DownArrowPopup,
+            MoveDirection.Left => LeftArrowPopup,
+            _ => RightArrowPopup
+        };
+
+        private Button ArrowFor(MoveDirection d) => d switch
+        {
+            MoveDirection.Up => MoveUpButton,
+            MoveDirection.Down => MoveDownButton,
+            MoveDirection.Left => MoveLeftButton,
+            _ => MoveRightButton
+        };
+
+        private Border EdgeFor(MoveDirection d) => d switch
+        {
+            MoveDirection.Up => EdgeUp,
+            MoveDirection.Down => EdgeDown,
+            MoveDirection.Left => EdgeLeft,
+            _ => EdgeRight
+        };
+
         private void Edge_MouseEnter(object sender, MouseEventArgs e)
         {
             var direction = DirectionOf(sender);
-            if (!CanMove(direction)) return;
-            SetEdge((Border)sender, direction, expanded: true);
+            if (CanMove(direction)) ShowArrow(direction);
         }
 
-        private void Edge_MouseLeave(object sender, MouseEventArgs e) =>
-            SetEdge((Border)sender, DirectionOf(sender), expanded: false);
+        private void Edge_MouseLeave(object sender, MouseEventArgs e) => ScheduleArrowCheck();
 
-        private static void SetEdge(Border edge, MoveDirection direction, bool expanded)
+        private void Arrow_MouseLeave(object sender, MouseEventArgs e) => ScheduleArrowCheck();
+
+        private void Host_Deactivated(object? sender, EventArgs e) => HideAllArrows(immediate: true);
+
+        private void ShowArrow(MoveDirection direction)
         {
-            double size = expanded ? EdgeActive : EdgeIdle;
-            if (direction is MoveDirection.Up or MoveDirection.Down) edge.Height = size;
-            else edge.Width = size;
-            if (edge.Child is UIElement arrow)
-                arrow.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+            _arrowsWanted.Add(direction);
+            var popup = PopupFor(direction);
+            var arrow = ArrowFor(direction);
+
+            PositionArrow(direction, popup, arrow);
+            if (!popup.IsOpen)
+            {
+                arrow.BeginAnimation(OpacityProperty, null);
+                arrow.Opacity = 0;
+                popup.IsOpen = true;
+            }
+            arrow.BeginAnimation(OpacityProperty, new DoubleAnimation(1, ArrowFade));
         }
 
-        private void CollapseAllEdges()
+        /// <summary>Places the arrow just inside its edge of the video area, centred along it.</summary>
+        private void PositionArrow(MoveDirection direction, Popup popup, Button arrow)
         {
-            SetEdge(EdgeUp, MoveDirection.Up, false);
-            SetEdge(EdgeDown, MoveDirection.Down, false);
-            SetEdge(EdgeLeft, MoveDirection.Left, false);
-            SetEdge(EdgeRight, MoveDirection.Right, false);
+            double width = ContentGrid.ActualWidth;
+            double height = ContentGrid.ActualHeight;
+            double top = HeaderBar.ActualHeight; // below the name bar, over the video itself
+            double size = arrow.Width;
+
+            (popup.HorizontalOffset, popup.VerticalOffset) = direction switch
+            {
+                MoveDirection.Up => ((width - size) / 2, top + ArrowInset),
+                MoveDirection.Down => ((width - size) / 2, height - size - ArrowInset),
+                MoveDirection.Left => (ArrowInset, top + (height - top - size) / 2),
+                _ => (width - size - ArrowInset, top + (height - top - size) / 2)
+            };
+        }
+
+        /// <summary>
+        /// Hides arrows the mouse is no longer on, after a short grace period. Moving from an edge
+        /// strip onto its arrow crosses into the arrow's own popup window, which WPF reports as
+        /// leaving the strip - hiding straight away would snatch the arrow from under the cursor.
+        /// </summary>
+        private void ScheduleArrowCheck()
+        {
+            if (_arrowCheck == null)
+            {
+                _arrowCheck = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(180) };
+                _arrowCheck.Tick += (_, _) =>
+                {
+                    _arrowCheck.Stop();
+                    foreach (var direction in _arrowsWanted.ToList())
+                    {
+                        if (!EdgeFor(direction).IsMouseOver && !ArrowFor(direction).IsMouseOver)
+                            HideArrow(direction, immediate: false);
+                    }
+                };
+            }
+            _arrowCheck.Stop();
+            _arrowCheck.Start();
+        }
+
+        private void HideArrow(MoveDirection direction, bool immediate)
+        {
+            _arrowsWanted.Remove(direction);
+            var popup = PopupFor(direction);
+            var arrow = ArrowFor(direction);
+            if (!popup.IsOpen) return;
+
+            if (immediate)
+            {
+                arrow.BeginAnimation(OpacityProperty, null);
+                arrow.Opacity = 0;
+                popup.IsOpen = false;
+                return;
+            }
+
+            var fade = new DoubleAnimation(0, ArrowFade);
+            // The mouse may have come back during the fade; only close if it is still unwanted.
+            fade.Completed += (_, _) =>
+            {
+                if (!_arrowsWanted.Contains(direction)) popup.IsOpen = false;
+            };
+            arrow.BeginAnimation(OpacityProperty, fade);
+        }
+
+        private void HideAllArrows(bool immediate)
+        {
+            _arrowCheck?.Stop();
+            foreach (var direction in Enum.GetValues<MoveDirection>())
+                HideArrow(direction, immediate);
         }
 
         private void Move_Click(object sender, RoutedEventArgs e)
         {
             var direction = DirectionOf(sender);
-            CollapseAllEdges();
+            // Gone before the tile moves: the popups are anchored to this tile's old position.
+            HideAllArrows(immediate: true);
             if (CanMove(direction)) MoveRequested?.Invoke(this, direction);
         }
 
@@ -391,6 +503,7 @@ namespace RtspCameraViewer.Controls
         public void Dispose()
         {
             _disposed = true;
+            HideAllArrows(immediate: true);
             IsRunning = false;
             _reconnectTimer.Stop();
             StopAspectProbe();

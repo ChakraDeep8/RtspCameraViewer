@@ -8,14 +8,48 @@
     <!-- No MinWidth/MinHeight: the grid sizes the cells. A minimum larger than the cell made
          every tile overhang its neighbour whenever many cameras shared the grid, and because
          the video is a native window, the overhang painted over the next tile's name bar. -->
+    <UserControl.Resources>
+        <!-- Round, translucent move arrow. Solid enough to read over any video, and it takes the
+             accent colour on hover like other Windows 11 flyout buttons. -->
+        <Style x:Key="MoveArrowButton" TargetType="Button">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Width" Value="34"/>
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" CornerRadius="17" Background="#D9202020" BorderBrush="#40FFFFFF" BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentFill}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource AccentForeground}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentFillPressed}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
     <Border Background="{StaticResource TileBackground}" CornerRadius="8" ClipToBounds="True"
             BorderBrush="{StaticResource CardStroke}" BorderThickness="1" Margin="4">
         <!--
-            Move arrows live in thin edge strips AROUND the tile content, not over the video.
-            The video is a native window that paints over anything WPF draws in its rectangle,
-            so an arrow overlaid on the feed would simply be invisible - the same reason the
-            name bar sits in its own row. A strip stays a few pixels wide until the mouse is on
-            that edge, then widens to show its arrow.
+            Moving a tile: a thin strip on each edge detects the hover, and the arrow for that
+            edge fades in over the video. The strips never change size, so the video is never
+            pushed or resized.
+
+            The arrows are Popups, not ordinary children, because the video is a native window
+            that paints over anything WPF draws in its rectangle - an arrow placed there directly
+            would be invisible. A Popup is its own window, so it can sit on top of the feed, the
+            same way the class dropdown opens over it.
         -->
         <Grid>
             <Grid.RowDefinitions>
@@ -30,38 +64,43 @@
             </Grid.ColumnDefinitions>
 
             <Border x:Name="EdgeUp" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Height="6" Tag="Up"
-                    Background="{StaticResource TileBackground}" MouseEnter="Edge_MouseEnter" MouseLeave="Edge_MouseLeave">
-                <Button x:Name="MoveUpButton" Tag="Up" Content="&#xE70E;" FontFamily="Segoe MDL2 Assets" FontSize="10"
-                        Width="36" Height="18" Visibility="Collapsed" Click="Move_Click"
-                        ToolTip="Move up" Style="{StaticResource IconButton}"/>
-            </Border>
+                    Background="{StaticResource TileBackground}" MouseEnter="Edge_MouseEnter" MouseLeave="Edge_MouseLeave"/>
             <Border x:Name="EdgeDown" Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Height="6" Tag="Down"
-                    Background="{StaticResource TileBackground}" MouseEnter="Edge_MouseEnter" MouseLeave="Edge_MouseLeave">
-                <Button x:Name="MoveDownButton" Tag="Down" Content="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="10"
-                        Width="36" Height="18" Visibility="Collapsed" Click="Move_Click"
-                        ToolTip="Move down" Style="{StaticResource IconButton}"/>
-            </Border>
+                    Background="{StaticResource TileBackground}" MouseEnter="Edge_MouseEnter" MouseLeave="Edge_MouseLeave"/>
             <Border x:Name="EdgeLeft" Grid.Row="1" Grid.Column="0" Width="6" Tag="Left"
-                    Background="{StaticResource TileBackground}" MouseEnter="Edge_MouseEnter" MouseLeave="Edge_MouseLeave">
-                <Button x:Name="MoveLeftButton" Tag="Left" Content="&#xE76B;" FontFamily="Segoe MDL2 Assets" FontSize="10"
-                        Width="18" Height="36" Visibility="Collapsed" Click="Move_Click"
-                        ToolTip="Move left" Style="{StaticResource IconButton}"/>
-            </Border>
+                    Background="{StaticResource TileBackground}" MouseEnter="Edge_MouseEnter" MouseLeave="Edge_MouseLeave"/>
             <Border x:Name="EdgeRight" Grid.Row="1" Grid.Column="2" Width="6" Tag="Right"
-                    Background="{StaticResource TileBackground}" MouseEnter="Edge_MouseEnter" MouseLeave="Edge_MouseLeave">
-                <Button x:Name="MoveRightButton" Tag="Right" Content="&#xE76C;" FontFamily="Segoe MDL2 Assets" FontSize="10"
-                        Width="18" Height="36" Visibility="Collapsed" Click="Move_Click"
-                        ToolTip="Move right" Style="{StaticResource IconButton}"/>
-            </Border>
+                    Background="{StaticResource TileBackground}" MouseEnter="Edge_MouseEnter" MouseLeave="Edge_MouseLeave"/>
+
+            <Popup x:Name="UpArrowPopup" PlacementTarget="{Binding ElementName=ContentGrid}" Placement="Relative"
+                   AllowsTransparency="True" StaysOpen="True" Focusable="False">
+                <Button x:Name="MoveUpButton" Tag="Up" Content="&#xE70E;" Opacity="0" ToolTip="Move up"
+                        Click="Move_Click" MouseLeave="Arrow_MouseLeave" Style="{StaticResource MoveArrowButton}"/>
+            </Popup>
+            <Popup x:Name="DownArrowPopup" PlacementTarget="{Binding ElementName=ContentGrid}" Placement="Relative"
+                   AllowsTransparency="True" StaysOpen="True" Focusable="False">
+                <Button x:Name="MoveDownButton" Tag="Down" Content="&#xE70D;" Opacity="0" ToolTip="Move down"
+                        Click="Move_Click" MouseLeave="Arrow_MouseLeave" Style="{StaticResource MoveArrowButton}"/>
+            </Popup>
+            <Popup x:Name="LeftArrowPopup" PlacementTarget="{Binding ElementName=ContentGrid}" Placement="Relative"
+                   AllowsTransparency="True" StaysOpen="True" Focusable="False">
+                <Button x:Name="MoveLeftButton" Tag="Left" Content="&#xE76B;" Opacity="0" ToolTip="Move left"
+                        Click="Move_Click" MouseLeave="Arrow_MouseLeave" Style="{StaticResource MoveArrowButton}"/>
+            </Popup>
+            <Popup x:Name="RightArrowPopup" PlacementTarget="{Binding ElementName=ContentGrid}" Placement="Relative"
+                   AllowsTransparency="True" StaysOpen="True" Focusable="False">
+                <Button x:Name="MoveRightButton" Tag="Right" Content="&#xE76C;" Opacity="0" ToolTip="Move right"
+                        Click="Move_Click" MouseLeave="Arrow_MouseLeave" Style="{StaticResource MoveArrowButton}"/>
+            </Popup>
 
             <!-- Tile content: header row above the video (see note on the edge strips). -->
-            <Grid Grid.Row="1" Grid.Column="1">
+            <Grid x:Name="ContentGrid" Grid.Row="1" Grid.Column="1">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <Border Grid.Row="0" Background="{StaticResource TileHeaderBackground}" Padding="8,5">
+                <Border x:Name="HeaderBar" Grid.Row="0" Background="{StaticResource TileHeaderBackground}" Padding="8,5">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
