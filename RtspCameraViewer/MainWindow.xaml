@@ -14,12 +14,14 @@
         Terminal) do it. WindowChrome keeps native dragging, double-click-to-maximize, Aero Snap
         and resize borders. Note this deliberately avoids AllowsTransparency: that switches WPF
         to layered-window rendering, which cannot host the native video windows at all.
-        UseAeroCaptionButtons=False hides the OS buttons that would otherwise be drawn into the
-        extended frame on top of our own.
+        The minimize / maximize / close buttons are the SYSTEM's, not ours. DWM paints them into
+        the extended frame regardless, so drawing our own as well showed every glyph doubled;
+        UseAeroCaptionButtons=True makes the real ones clickable instead. They are proper Windows
+        11 buttons - dark, red close, and the Snap Layouts flyout on maximize.
     -->
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="48" ResizeBorderThickness="6" GlassFrameThickness="-1"
-                            CornerRadius="0" UseAeroCaptionButtons="False"/>
+                            CornerRadius="0" UseAeroCaptionButtons="True"/>
     </shell:WindowChrome.WindowChrome>
 
     <!-- A maximized custom-chrome window overhangs the screen by its frame; RootBorder's margin
@@ -63,14 +65,8 @@
                             Click="AppFullscreen_Click" ToolTip="Full screen (F11)" Style="{StaticResource IconButton}"/>
                 </StackPanel>
 
-                <StackPanel Grid.Column="3" Orientation="Horizontal">
-                    <Button x:Name="MinimizeButton" Content="&#xE921;" Click="Minimize_Click"
-                            ToolTip="Minimize" Style="{StaticResource CaptionButton}"/>
-                    <Button x:Name="RestoreButton" Content="&#xE922;" Click="MaximizeRestore_Click"
-                            ToolTip="Maximize" Style="{StaticResource CaptionButton}"/>
-                    <Button x:Name="CloseButton" Content="&#xE8BB;" Click="CloseWindow_Click"
-                            ToolTip="Close" Style="{StaticResource CaptionCloseButton}"/>
-                </StackPanel>
+                <!-- Room for the system caption buttons (3 x 46px), which DWM draws here. -->
+                <Border Grid.Column="3" Width="142"/>
             </Grid>
 
             <!-- Class filter bar: shown once at least one camera has been given a class. -->

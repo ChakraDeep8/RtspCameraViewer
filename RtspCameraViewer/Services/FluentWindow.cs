@@ -94,6 +94,9 @@ namespace RtspCameraViewer.Services
             var hwnd = new WindowInteropHelper(window).Handle;
             if (hwnd == IntPtr.Zero) return;
 
+            // Dark mode also darkens the system's own caption buttons, which the main window uses:
+            // they are drawn by DWM into the extended frame whatever WPF does, so drawing our own
+            // on top produced doubled glyphs. Using the real ones also brings Snap Layouts.
             int on = 1;
             if (DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref on, sizeof(int)) != 0)
                 DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1, ref on, sizeof(int));

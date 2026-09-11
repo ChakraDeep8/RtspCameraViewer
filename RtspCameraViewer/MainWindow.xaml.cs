@@ -46,12 +46,7 @@ namespace RtspCameraViewer
             // what leaks video windows (see the pruning in RefreshLayout).
             RefreshLayout();
 
-            StateChanged += (_, _) =>
-            {
-                UpdateRestoreIcon();
-                UpdateMaximizedInset();
-            };
-            UpdateRestoreIcon();
+            StateChanged += (_, _) => UpdateMaximizedInset();
         }
 
         /// <summary>
@@ -74,12 +69,6 @@ namespace RtspCameraViewer
             }
         }
 
-        private void UpdateRestoreIcon()
-        {
-            // Segoe MDL2 Assets glyphs:  = restore (overlapping squares),  = maximize (single square)
-            RestoreButton.Content = WindowState == WindowState.Maximized ? "\uE923" : "\uE922";
-            RestoreButton.ToolTip = WindowState == WindowState.Maximized ? "Restore" : "Maximize";
-        }
 
         private CameraTile CreateTile(Camera camera)
         {
@@ -521,15 +510,6 @@ namespace RtspCameraViewer
             SetExpanded(null);
             RefreshLayout(); // restores the whole grid and restarts the tiles in it
         }
-
-        private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-
-        private void MaximizeRestore_Click(object sender, RoutedEventArgs e)
-        {
-            WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-        }
-
-        private void CloseWindow_Click(object sender, RoutedEventArgs e) => Close();
 
         private void AppFullscreen_Click(object sender, RoutedEventArgs e) => ToggleAppFullscreen();
 
