@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using RtspCameraViewer.Models;
+using RtspCameraViewer.Services;
 
 namespace RtspCameraViewer.Views
 {
@@ -22,6 +23,7 @@ namespace RtspCameraViewer.Views
         public CameraEditDialog(Camera? existing = null, IEnumerable<string>? existingClasses = null)
         {
             InitializeComponent();
+            FluentWindow.Attach(this);
             _isEdit = existing != null;
             Result = existing ?? new Camera();
 

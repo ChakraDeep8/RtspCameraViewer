@@ -58,6 +58,7 @@ namespace RtspCameraViewer.Views
         public SettingsDialog(List<Camera> cameras, string? currentClass)
         {
             InitializeComponent();
+            FluentWindow.Attach(this);
             _cameras = cameras;
             _qualityOnOpen = cameras.ToDictionary(c => c.Id, c => c.Quality);
             _shapeOnOpen = cameras.ToDictionary(c => c.Id, c => (c.DisplayAspect, c.DisplayFit));

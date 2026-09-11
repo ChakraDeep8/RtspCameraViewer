@@ -24,6 +24,7 @@ namespace RtspCameraViewer
         private WindowState _preFullscreenState;
         private WindowStyle _preFullscreenStyle;
         private ResizeMode _preFullscreenResizeMode;
+        private Rect _preFullscreenBounds = Rect.Empty;
 
         /// <summary>null = "All Stores" (no filter); otherwise only cameras with a matching Store show.</summary>
         private string? _selectedStore;
@@ -31,7 +32,10 @@ namespace RtspCameraViewer
 
         public MainWindow()
         {
+            // Before InitializeComponent, so the accent is in place when the first styles resolve.
+            FluentWindow.ApplyAccent(Application.Current.Resources);
             InitializeComponent();
+            FluentWindow.Attach(this);
 
             Core.Initialize();
             _libVlc = new LibVLC(enableDebugLogs: false);
@@ -42,8 +46,32 @@ namespace RtspCameraViewer
             // what leaks video windows (see the pruning in RefreshLayout).
             RefreshLayout();
 
-            StateChanged += (_, _) => UpdateRestoreIcon();
+            StateChanged += (_, _) =>
+            {
+                UpdateRestoreIcon();
+                UpdateMaximizedInset();
+            };
             UpdateRestoreIcon();
+        }
+
+        /// <summary>
+        /// A maximized window with custom chrome is sized past the screen edge by its (invisible)
+        /// frame, so without an inset the top of the title bar - and the caption buttons - sit
+        /// off-screen. True full screen has no frame, so no inset there.
+        /// </summary>
+        private void UpdateMaximizedInset()
+        {
+            if (WindowState == WindowState.Maximized && !_isAppFullscreen)
+            {
+                var frame = SystemParameters.WindowResizeBorderThickness;
+                const double paddedBorder = 4;
+                RootBorder.Margin = new Thickness(frame.Left + paddedBorder, frame.Top + paddedBorder,
+                                                  frame.Right + paddedBorder, frame.Bottom + paddedBorder);
+            }
+            else
+            {
+                RootBorder.Margin = new Thickness(0);
+            }
         }
 
         private void UpdateRestoreIcon()
@@ -512,20 +540,41 @@ namespace RtspCameraViewer
                 _preFullscreenState = WindowState;
                 _preFullscreenStyle = WindowStyle;
                 _preFullscreenResizeMode = ResizeMode;
+                _preFullscreenBounds = WindowState == WindowState.Normal
+                    ? new Rect(Left, Top, Width, Height)
+                    : RestoreBounds;
+                _isAppFullscreen = true;
 
+                // Sized to the monitor rather than maximized: with custom window chrome a
+                // maximized window stops at the work area, so "full screen" kept the taskbar.
+                var screen = FluentWindow.GetMonitorBounds(this);
                 WindowStyle = WindowStyle.None;
                 ResizeMode = ResizeMode.NoResize;
-                WindowState = WindowState.Maximized;
-                _isAppFullscreen = true;
+                WindowState = WindowState.Normal;
+                Left = screen.Left;
+                Top = screen.Top;
+                Width = screen.Width;
+                Height = screen.Height;
+
                 AppFullscreenButton.ToolTip = "Exit full screen (Esc / F11)";
+                UpdateMaximizedInset();
             }
             else
             {
-                WindowState = _preFullscreenState;
+                // Cleared first, so restoring to Maximized gets its frame inset back.
+                _isAppFullscreen = false;
                 WindowStyle = _preFullscreenStyle;
                 ResizeMode = _preFullscreenResizeMode;
-                _isAppFullscreen = false;
+                if (!_preFullscreenBounds.IsEmpty)
+                {
+                    Left = _preFullscreenBounds.Left;
+                    Top = _preFullscreenBounds.Top;
+                    Width = _preFullscreenBounds.Width;
+                    Height = _preFullscreenBounds.Height;
+                }
+                WindowState = _preFullscreenState;
                 AppFullscreenButton.ToolTip = "Full screen (F11)";
+                UpdateMaximizedInset();
             }
         }
 

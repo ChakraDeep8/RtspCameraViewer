@@ -4,7 +4,8 @@
         Title="Add Camera" Height="560" Width="440"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         Background="{StaticResource AppBackground}"
-        FontFamily="Segoe UI">
+        FontFamily="Segoe UI Variable Text, Segoe UI"
+        Foreground="{StaticResource TextPrimary}">
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -64,8 +65,7 @@
             </StackPanel>
             <StackPanel Grid.Column="2">
                 <TextBlock Text="Password (optional)" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
-                <PasswordBox x:Name="PassBox" Background="#33333D" Foreground="{StaticResource TextPrimary}"
-                             Padding="8,6" BorderBrush="#44444F" BorderThickness="1" CaretBrush="White"/>
+                <PasswordBox x:Name="PassBox" Style="{StaticResource PasswordInput}"/>
             </StackPanel>
         </Grid>
 
@@ -77,7 +77,7 @@
 
         <StackPanel Grid.Row="12" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="Cancel" Width="90" Height="32" Margin="0,0,8,0" Click="Cancel_Click" Style="{StaticResource ToolButton}"/>
-            <Button x:Name="SaveButton" Content="Save" Width="90" Height="32" Click="Save_Click" Style="{StaticResource ToolButton}"/>
+            <Button x:Name="SaveButton" Content="Save" Width="90" Height="32" Click="Save_Click" Style="{StaticResource AccentButton}"/>
         </StackPanel>
     </Grid>
 </Window>

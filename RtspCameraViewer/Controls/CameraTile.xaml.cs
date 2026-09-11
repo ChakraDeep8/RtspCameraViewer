@@ -71,6 +71,13 @@ namespace RtspCameraViewer.Controls
         public event Action? VideoAspectKnown;
 
         private DispatcherTimer? _aspectProbe;
+
+        /// <summary>
+        /// Whether the current playback has produced a decoded frame. The Playing event fires
+        /// before that, and a video surface with nothing to show renders solid white - so the
+        /// placeholder stays up until a frame actually exists.
+        /// </summary>
+        private bool _frameSeen;
         private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(5);
 
         public CameraTile(Camera camera, LibVLC libVlc)
@@ -114,6 +121,7 @@ namespace RtspCameraViewer.Controls
         {
             if (_disposed) return;
             IsRunning = true;
+            _frameSeen = false;
             SetStatus(CameraStatus.Connecting, "connecting…");
 
             try
@@ -192,14 +200,16 @@ namespace RtspCameraViewer.Controls
         /// </summary>
         private void StartAspectProbe()
         {
-            if (VideoAspect != null || _aspectProbe != null) return;
+            // Runs on every playback, not just the first: it is also what reveals the video once
+            // a frame has been decoded, and a restarted stream is white again until then.
+            if (_aspectProbe != null) return;
 
             int attempts = 0;
-            _aspectProbe = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+            _aspectProbe = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             _aspectProbe.Tick += (_, _) =>
             {
                 attempts++;
-                if (_disposed || !IsRunning || VideoAspect != null || attempts > 20)
+                if (_disposed || !IsRunning || _frameSeen || attempts > 80)
                 {
                     StopAspectProbe();
                     return;
@@ -213,9 +223,15 @@ namespace RtspCameraViewer.Controls
                     uint width = 0, height = 0;
                     if (player.Size(0, ref width, ref height) && width > 0 && height > 0)
                     {
-                        VideoAspect = width / (double)height;
+                        _frameSeen = true;
                         StopAspectProbe();
-                        VideoAspectKnown?.Invoke();
+                        PlaceholderPanel.Visibility = Visibility.Collapsed;
+
+                        if (VideoAspect == null)
+                        {
+                            VideoAspect = width / (double)height;
+                            VideoAspectKnown?.Invoke();
+                        }
                     }
                 }
                 catch { /* keep trying until the attempt budget runs out */ }
@@ -268,19 +284,22 @@ namespace RtspCameraViewer.Controls
             StatusText.Text = label;
 
             bool live = status == CameraStatus.Live;
-            PlaceholderPanel.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
+            PlaceholderPanel.Visibility = live && _frameSeen ? Visibility.Collapsed : Visibility.Visible;
 
             PlaceholderText.Text = status switch
             {
                 CameraStatus.Connecting => "Connecting…",
                 CameraStatus.Error => "Reconnecting…",
                 CameraStatus.Stopped => "Stopped",
-                _ => ""
+                _ => "Starting video…"
             };
             StatusDot.Fill = status switch
             {
                 CameraStatus.Live => (Brush)FindResource("OkBrush"),
                 CameraStatus.Error => (Brush)FindResource("ErrorBrush"),
+                // Stopped is not a warning - a grid of paused cameras should read as calm, not as
+                // a wall of yellow alerts.
+                CameraStatus.Stopped => (Brush)FindResource("TextSecondary"),
                 _ => (Brush)FindResource("WarnBrush")
             };
         }

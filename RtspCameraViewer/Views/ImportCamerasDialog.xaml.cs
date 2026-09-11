@@ -57,6 +57,7 @@ namespace RtspCameraViewer.Views
         public ImportCamerasDialog(List<Camera> existingCameras, IEnumerable<string>? existingClasses = null, string? preselectedClass = null)
         {
             InitializeComponent();
+            FluentWindow.Attach(this);
             _existingCameras = existingCameras;
             PreviewList.ItemsSource = _rows;
 

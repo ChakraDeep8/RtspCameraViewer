@@ -4,7 +4,8 @@
         Title="Upload Cameras" Height="580" Width="640"
         WindowStartupLocation="CenterOwner" MinHeight="480" MinWidth="540"
         Background="{StaticResource AppBackground}"
-        FontFamily="Segoe UI"
+        FontFamily="Segoe UI Variable Text, Segoe UI"
+        Foreground="{StaticResource TextPrimary}"
         AllowDrop="True" DragOver="Window_DragOver" Drop="Window_Drop">
     <Grid Margin="20">
         <Grid.RowDefinitions>
@@ -91,7 +92,7 @@
         <StackPanel Grid.Row="8" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="Cancel" Width="90" Height="32" Margin="0,0,8,0" Click="Cancel_Click" Style="{StaticResource ToolButton}"/>
             <Button x:Name="ImportButton" Content="Add cameras" Width="130" Height="32" Click="Import_Click"
-                    Style="{StaticResource ToolButton}" IsEnabled="False"/>
+                    Style="{StaticResource AccentButton}" IsEnabled="False"/>
         </StackPanel>
     </Grid>
 </Window>

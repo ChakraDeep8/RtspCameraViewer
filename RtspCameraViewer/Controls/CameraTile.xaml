@@ -4,10 +4,12 @@
              xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             mc:Ignorable="d"
-             MinWidth="160" MinHeight="120">
+             mc:Ignorable="d">
+    <!-- No MinWidth/MinHeight: the grid sizes the cells. A minimum larger than the cell made
+         every tile overhang its neighbour whenever many cameras shared the grid, and because
+         the video is a native window, the overhang painted over the next tile's name bar. -->
     <Border Background="{StaticResource TileBackground}" CornerRadius="8" ClipToBounds="True"
-            BorderBrush="#3A3A44" BorderThickness="1" Margin="4">
+            BorderBrush="{StaticResource CardStroke}" BorderThickness="1" Margin="4">
         <!--
             Move arrows live in thin edge strips AROUND the tile content, not over the video.
             The video is a native window that paints over anything WPF draws in its rectangle,
@@ -59,7 +61,7 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <Border Grid.Row="0" Background="#22222A" Padding="8,5">
+                <Border Grid.Row="0" Background="{StaticResource TileHeaderBackground}" Padding="8,5">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
