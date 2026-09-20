@@ -56,6 +56,18 @@ namespace RtspCameraViewer
             RefreshLayout();
 
             StateChanged += (_, _) => UpdateMaximizedInset();
+
+            // Open full screen. This is a wall-display app — it is normally left running on a
+            // screen someone glances at, where the taskbar and title bar are only there to be
+            // covered by something else. Esc and F11 still leave, and leaving restores the
+            // centred 1200x800 window captured below, so the escape route is unchanged.
+            //
+            // Deferred to Loaded rather than run here: sizing to the monitor needs the window's
+            // handle to know which monitor it is on, and that does not exist until it is shown.
+            Loaded += (_, _) =>
+            {
+                if (!_isAppFullscreen) ToggleAppFullscreen();
+            };
         }
 
         /// <summary>
@@ -924,15 +936,37 @@ namespace RtspCameraViewer
                 ResizeMode = _preFullscreenResizeMode;
                 if (!_preFullscreenBounds.IsEmpty)
                 {
-                    Left = _preFullscreenBounds.Left;
-                    Top = _preFullscreenBounds.Top;
-                    Width = _preFullscreenBounds.Width;
-                    Height = _preFullscreenBounds.Height;
+                    var bounds = FitToWorkArea(_preFullscreenBounds);
+                    Left = bounds.Left;
+                    Top = bounds.Top;
+                    Width = bounds.Width;
+                    Height = bounds.Height;
                 }
                 WindowState = _preFullscreenState;
                 AppFullscreenButton.ToolTip = "Full screen (F11)";
                 UpdateMaximizedInset();
             }
+        }
+
+        /// <summary>
+        /// Shrinks and nudges a window rectangle until it sits inside the monitor's work area.
+        ///
+        /// The default size is 1200x800, which is TALLER than a 1366x768 screen, and centring a
+        /// window taller than the screen puts its top edge — and therefore the title bar and the
+        /// caption buttons — above the top of the display. That was survivable while it only
+        /// affected the first launch; now that the app opens full screen, it is where every Esc
+        /// and every F11 lands, so the restored window has to be placed somewhere reachable.
+        /// </summary>
+        private Rect FitToWorkArea(Rect bounds)
+        {
+            var work = FluentWindow.GetWorkAreaBounds(this);
+            if (work.Width <= 0 || work.Height <= 0) return bounds;
+
+            double width = Math.Min(bounds.Width, work.Width);
+            double height = Math.Min(bounds.Height, work.Height);
+            double left = Math.Clamp(bounds.Left, work.Left, Math.Max(work.Left, work.Right - width));
+            double top = Math.Clamp(bounds.Top, work.Top, Math.Max(work.Top, work.Bottom - height));
+            return new Rect(left, top, width, height);
         }
 
         private void MainWindow_KeyDown(object sender, KeyEventArgs e)
