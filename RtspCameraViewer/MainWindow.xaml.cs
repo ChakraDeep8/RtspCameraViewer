@@ -57,17 +57,16 @@ namespace RtspCameraViewer
 
             StateChanged += (_, _) => UpdateMaximizedInset();
 
-            // Open full screen. This is a wall-display app — it is normally left running on a
-            // screen someone glances at, where the taskbar and title bar are only there to be
-            // covered by something else. Esc and F11 still leave, and leaving restores the
-            // centred 1200x800 window captured below, so the escape route is unchanged.
+            // Open maximized: the whole work area, with the title bar, the taskbar and the caption
+            // buttons all still there. F11 goes on to true full screen when the screen is meant to
+            // show nothing but cameras.
             //
-            // Deferred to Loaded rather than run here: sizing to the monitor needs the window's
-            // handle to know which monitor it is on, and that does not exist until it is shown.
-            Loaded += (_, _) =>
-            {
-                if (!_isAppFullscreen) ToggleAppFullscreen();
-            };
+            // Set before the window is shown, so it is never briefly painted at its normal size
+            // and then snapped out — from Loaded that flash is visible on a grid this size.
+            // The inset is still applied from Loaded, because it needs the frame metrics of a
+            // window that actually exists.
+            WindowState = WindowState.Maximized;
+            Loaded += (_, _) => UpdateMaximizedInset();
         }
 
         /// <summary>
