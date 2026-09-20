@@ -69,13 +69,50 @@
                 <Border Grid.Column="3" Width="142"/>
             </Grid>
 
-            <!-- Class filter bar: shown once at least one camera has been given a class. -->
-            <Border x:Name="StoreBar" DockPanel.Dock="Top" Background="Transparent" Padding="16,0,16,10" Visibility="Collapsed">
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="Camera class" Foreground="{StaticResource TextSecondary}" FontSize="12"
-                               VerticalAlignment="Center" Margin="0,0,12,0"/>
-                    <ComboBox x:Name="StoreSelector" Width="240" SelectionChanged="StoreSelector_SelectionChanged"/>
-                </StackPanel>
+            <!-- View bar: which class is on screen (left), how it is shown (right). -->
+            <Border x:Name="StoreBar" DockPanel.Dock="Top" Background="Transparent" Padding="16,0,16,10">
+                <Grid>
+                    <StackPanel x:Name="ClassPickerPanel" Orientation="Horizontal" HorizontalAlignment="Left"
+                                Visibility="Collapsed">
+                        <TextBlock Text="Camera class" Foreground="{StaticResource TextSecondary}" FontSize="12"
+                                   VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <ComboBox x:Name="StoreSelector" Width="240" SelectionChanged="StoreSelector_SelectionChanged"/>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <!-- Window count. The cap is a hardware limit, not a preference — see
+                             ViewLayout.MaxWindows — so the + button simply stops at it. -->
+                        <TextBlock Text="Windows" Foreground="{StaticResource TextSecondary}" FontSize="12"
+                                   VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <RepeatButton x:Name="FewerWindowsButton" Content="&#xE738;" Click="FewerWindows_Click"
+                                      Style="{StaticResource StepperButton}" ToolTip="Show fewer windows (Ctrl+−)"/>
+                        <Border Background="{StaticResource ControlFill}" BorderBrush="{StaticResource ControlStroke}"
+                                BorderThickness="0,1,0,1" Height="28" MinWidth="40">
+                            <TextBlock x:Name="WindowCountText" Text="12" FontSize="13" FontWeight="SemiBold"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <RepeatButton x:Name="MoreWindowsButton" Content="&#xE710;" Click="MoreWindows_Click"
+                                      Style="{StaticResource StepperButton}" ToolTip="Show more windows (Ctrl++)"/>
+
+                        <Border Width="1" Height="20" Background="{StaticResource ControlStroke}" Margin="12,0"/>
+
+                        <!-- Picture adjustments for the live feed. Deliberately unavailable in
+                             All Classes: there it would mean "apply to everything at once",
+                             which is a destructive-feeling edit across cameras the user cannot
+                             all see. Pick a class (or expand one camera) and it turns on. -->
+                        <Button x:Name="FilterButton" Height="28" Padding="10,0" Click="Filter_Click"
+                                Style="{StaticResource ToolButton}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE793;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBlock Text="Filter" FontSize="12" VerticalAlignment="Center"/>
+                                <Ellipse x:Name="FilterActiveDot" Width="6" Height="6" Margin="8,0,0,0"
+                                         Fill="{DynamicResource AccentBrush}" VerticalAlignment="Center"
+                                         Visibility="Collapsed"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Grid>
             </Border>
 
             <!-- Expanded-view bar. The collapse control lives here rather than over the video,
@@ -84,14 +121,26 @@
                 <Grid>
                     <TextBlock x:Name="ExpandNameText" Text="Expanded" Foreground="{StaticResource TextSecondary}"
                                FontSize="12" VerticalAlignment="Center" HorizontalAlignment="Left"/>
-                    <Button HorizontalAlignment="Right" Height="30" Padding="10,0" Click="ExitFullscreen_Click"
-                            ToolTip="Back to the grid (Esc)" Style="{StaticResource ToolButton}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE73F;" FontFamily="Segoe MDL2 Assets" FontSize="12"
-                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBlock Text="Back to grid" FontSize="12" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <!-- Expanded view is where picture adjustment belongs most: one camera,
+                             filling the window, so the effect of a slider is actually visible. -->
+                        <Button x:Name="ExpandAdjustButton" Height="30" Padding="10,0" Click="Filter_Click"
+                                ToolTip="Adjust this camera's picture" Style="{StaticResource ToolButton}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE793;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBlock Text="Adjust picture" FontSize="12" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Height="30" Padding="10,0" Margin="6,0,0,0" Click="ExitFullscreen_Click"
+                                ToolTip="Back to the grid (Esc)" Style="{StaticResource ToolButton}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE73F;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBlock Text="Back to grid" FontSize="12" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
                 </Grid>
             </Border>
 
@@ -105,6 +154,51 @@
                                HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
 
                     <UniformGrid x:Name="GridHost" SizeChanged="GridHost_SizeChanged"/>
+
+                    <!--
+                        Picture adjustment flyout, shared by the grid's Filter button and the
+                        expanded view's Adjust button. One panel rather than two: the controls
+                        are identical and only the SCOPE differs, which the header states
+                        outright instead of leaving the user to infer it from which button they
+                        pressed.
+
+                        A Popup because it opens over the native video surface, which paints over
+                        anything WPF draws in its rectangle. The sliders themselves are built in
+                        code (BuildAdjustPanel) from VideoAdjustments.AllKnobs, so the ranges
+                        shown are LibVLC's own and a knob cannot drift out of sync with the
+                        filter behind it.
+                    -->
+                    <Popup x:Name="AdjustPopup" Placement="Bottom" AllowsTransparency="True"
+                           StaysOpen="False" Focusable="True" HorizontalOffset="-260" VerticalOffset="6"
+                           Closed="AdjustPopup_Closed">
+                        <Border Background="{StaticResource FlyoutBackground}" BorderBrush="{StaticResource ControlStroke}"
+                                BorderThickness="1" CornerRadius="8" Padding="16,14" Width="340" Margin="10"
+                                Effect="{StaticResource FlyoutShadow}">
+                            <StackPanel>
+                                <TextBlock x:Name="AdjustScopeText" Text="Picture" FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimary}"/>
+                                <TextBlock x:Name="AdjustScopeHint" Text="" FontSize="11" TextWrapping="Wrap"
+                                           Foreground="{StaticResource TextSecondary}" Margin="0,3,0,10"/>
+
+                                <StackPanel x:Name="AdjustKnobPanel"/>
+
+                                <Grid Margin="0,12,0,0">
+                                    <Button x:Name="AdjustResetButton" HorizontalAlignment="Left" Height="30"
+                                            Padding="10,0" Click="AdjustReset_Click" Style="{StaticResource ToolButton}"
+                                            ToolTip="Put every slider back to neutral">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE7A7;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <TextBlock Text="Reset" FontSize="12" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button HorizontalAlignment="Right" Height="30" Padding="14,0"
+                                            Click="AdjustDone_Click" Style="{StaticResource AccentButton}"
+                                            Content="Done"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
                 </Grid>
             </Border>
         </DockPanel>

@@ -30,6 +30,13 @@ namespace RtspCameraViewer
         private string? _selectedStore;
         private bool _suppressStoreSelectionChanged;
 
+        /// <summary>Window count and slot assignments, per view. See <see cref="ViewLayout"/>.</summary>
+        private readonly Dictionary<string, ViewLayout> _layouts;
+
+        /// <summary>Cameras the adjustment flyout is currently editing; empty when it is closed.</summary>
+        private List<Camera> _adjustTargets = new();
+        private bool _suppressAdjustChanged;
+
         public MainWindow()
         {
             // Before InitializeComponent, so the accent is in place when the first styles resolve.
@@ -41,6 +48,8 @@ namespace RtspCameraViewer
             _libVlc = new LibVLC(enableDebugLogs: false);
 
             _cameras = CameraStore.Load();
+            _layouts = ViewLayoutStore.Load();
+            BuildAdjustPanel();
             // Tiles are created by RefreshLayout, for the cameras actually on screen. Creating
             // all of them up front left tiles alive outside the visual tree, which is exactly
             // what leaks video windows (see the pruning in RefreshLayout).
@@ -76,6 +85,7 @@ namespace RtspCameraViewer
             tile.FullscreenRequested += Tile_FullscreenRequested;
             tile.RemoveRequested += Tile_RemoveRequested;
             tile.MoveRequested += Tile_MoveRequested;
+            tile.SourceChangeRequested += Tile_SourceChangeRequested;
             // The first stream to report its real dimensions re-shapes the grid around them.
             tile.VideoAspectKnown += UpdateGridShape;
             _tiles[camera.Id] = tile;
@@ -90,12 +100,13 @@ namespace RtspCameraViewer
             // Cameras that have never been placed are slotted in class-by-class, so a fresh list
             // still reads store-by-store until the user rearranges it.
             EnsureOrder();
-            var visible = (_selectedStore == null
-                    ? _cameras.AsEnumerable()
-                    : _cameras.Where(c => string.Equals(StoreOf(c), _selectedStore, System.StringComparison.OrdinalIgnoreCase)))
-                .OrderBy(c => c.Order ?? int.MaxValue)
-                .ThenBy(c => c.Name, System.StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var inView = CamerasInView();
+
+            // What the grid actually shows: one camera per window, the count and the assignment
+            // both the user's (see ViewLayout). Everything else in the class stays listed in each
+            // window's source picker rather than being forced on screen — which is what lets a
+            // 49-camera list be watched on a 12-window board without paging through it.
+            var visible = inView;
 
             // Expanding is just "show one camera": the tile stays in the grid and the grid
             // narrows to it. Reparenting it into an overlay instead was the wrong shape - the
@@ -106,8 +117,9 @@ namespace RtspCameraViewer
             if (_fullscreenTile != null && visible.All(c => c.Id != _fullscreenTile.Camera.Id))
                 SetExpanded(null); // the expanded camera is not in this class - drop back to the grid
 
-            if (_fullscreenTile != null)
-                visible = visible.Where(c => c.Id == _fullscreenTile.Camera.Id).ToList();
+            visible = _fullscreenTile != null
+                ? visible.Where(c => c.Id == _fullscreenTile.Camera.Id).ToList()
+                : ResolveSlots(inView);
 
             // Tear down the tiles that are not on screen, rather than merely un-parenting them.
             // A VideoView's video and overlay windows are NATIVE and outlive their WPF parent, so
@@ -149,7 +161,10 @@ namespace RtspCameraViewer
             // ~0.2/s. The limit is the number of simultaneous streams, not the decode settings —
             // tuning those (software decode, skipping the loop filter, single-threaded decode)
             // measurably did NOT help, so the honest fix is to run fewer at a time.
-            var streaming = visible.Take(MaxConcurrentStreams).ToList();
+            // Every window on screen streams. That is the point of the window count replacing the
+            // old fixed cap: the number of open streams is now something the user chose and can
+            // see, rather than a hidden limit that quietly paused the tiles past the twelfth.
+            var streaming = visible;
             var streamingIds = new HashSet<string>(streaming.Select(c => c.Id));
 
             // Stop first, and immediately: this frees sockets and decoders before the new set
@@ -172,10 +187,12 @@ namespace RtspCameraViewer
 
             UpdateGridShape();
 
-            CameraCountText.Text = visible.Count == 1 ? "1 camera" : $"{visible.Count} cameras";
-            if (_selectedStore != null) CameraCountText.Text += $"  ·  {_selectedStore}";
-            if (visible.Count > MaxConcurrentStreams)
-                CameraCountText.Text += $"  ·  streaming {MaxConcurrentStreams} at a time — pick a class to see the rest";
+            // Each window offers the whole view in its picker, so any camera in the class can be
+            // brought into any window without changing the count.
+            foreach (var tile in GridHost.Children.OfType<CameraTile>())
+                tile.SetSourceOptions(inView);
+
+            UpdateViewBar(inView.Count, visible.Count);
 
             EmptyStateText.Visibility = visible.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             EmptyStateText.Text = _cameras.Count == 0
@@ -209,11 +226,12 @@ namespace RtspCameraViewer
         private int _startGeneration;
 
         /// <summary>
-        /// How many cameras may stream simultaneously. Raising this degrades every stream rather
-        /// than showing more of them: past roughly a dozen, decoders start losing picture buffers
-        /// and frames tear. Cameras beyond the cap stay listed but paused.
+        /// Above this many simultaneous streams the picture starts to suffer — measured here,
+        /// decoders begin losing buffers and frames tear. It is no longer a hard cap (the window
+        /// count is the user's, up to <see cref="ViewLayout.MaxWindows"/>), but crossing it is
+        /// worth saying out loud, so the count bar does.
         /// </summary>
-        private const int MaxConcurrentStreams = 12;
+        private const int ComfortableStreams = 12;
 
         /// <summary>
         /// Fallback until a stream reports its real size. Only used before the first frame
@@ -384,7 +402,9 @@ namespace RtspCameraViewer
 
             if (stores.Count == 0)
             {
-                StoreBar.Visibility = Visibility.Collapsed;
+                // The bar itself stays: it also carries the window stepper and the filter button,
+                // which are useful with or without classes.
+                ClassPickerPanel.Visibility = Visibility.Collapsed;
                 _selectedStore = null;
                 return;
             }
@@ -392,7 +412,7 @@ namespace RtspCameraViewer
             if (_selectedStore != null && !stores.Contains(_selectedStore, System.StringComparer.OrdinalIgnoreCase))
                 _selectedStore = null; // the store that was selected no longer has any cameras
 
-            StoreBar.Visibility = Visibility.Visible;
+            ClassPickerPanel.Visibility = Visibility.Visible;
 
             _suppressStoreSelectionChanged = true;
             StoreSelector.Items.Clear();
@@ -412,7 +432,364 @@ namespace RtspCameraViewer
         {
             if (_suppressStoreSelectionChanged) return;
             _selectedStore = (StoreSelector.SelectedItem as ComboBoxItem)?.Tag as string;
+            AdjustPopup.IsOpen = false; // its scope was the class being left
             RefreshLayout();
+        }
+
+        // ===================== Windows: how many, and showing what =====================
+
+        /// <summary>Every camera the current view covers, in the user's order — not just the ones on screen.</summary>
+        private List<Camera> CamerasInView() =>
+            (_selectedStore == null
+                    ? _cameras.AsEnumerable()
+                    : _cameras.Where(c => string.Equals(StoreOf(c), _selectedStore, System.StringComparison.OrdinalIgnoreCase)))
+                .OrderBy(c => c.Order ?? int.MaxValue)
+                .ThenBy(c => c.Name, System.StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+        /// <summary>The window count and slot assignment belonging to the view on screen.</summary>
+        private ViewLayout CurrentLayout
+        {
+            get
+            {
+                var key = ViewLayoutStore.KeyFor(_selectedStore);
+                if (!_layouts.TryGetValue(key, out var layout))
+                    _layouts[key] = layout = new ViewLayout();
+                return layout;
+            }
+        }
+
+        private void SaveLayouts() => ViewLayoutStore.Save(_layouts);
+
+        /// <summary>
+        /// Works out which camera belongs in each window.
+        ///
+        /// Stored slots win, so a board the user arranged stays arranged. A slot whose camera has
+        /// been deleted, or filtered out of this view, is refilled from the remaining cameras in
+        /// order rather than left as a hole — an empty window is a worse answer than a different
+        /// camera. The resolved assignment is written back, so what the user sees is exactly what
+        /// is saved and there is no second, invisible truth.
+        /// </summary>
+        private List<Camera> ResolveSlots(List<Camera> inView)
+        {
+            var layout = CurrentLayout;
+            int windows = Math.Min(ViewLayout.Clamp(layout.WindowCount), inView.Count);
+
+            var byId = inView.ToDictionary(c => c.Id);
+            var taken = new HashSet<string>();
+            var slots = new Camera?[windows];
+
+            for (int i = 0; i < windows; i++)
+            {
+                var id = i < layout.Slots.Count ? layout.Slots[i] : null;
+                if (id != null && byId.TryGetValue(id, out var camera) && taken.Add(id))
+                    slots[i] = camera;
+            }
+
+            // Fill whatever the stored assignment did not cover, in view order.
+            var spare = new Queue<Camera>(inView.Where(c => !taken.Contains(c.Id)));
+            for (int i = 0; i < windows; i++)
+            {
+                if (slots[i] != null) continue;
+                if (spare.Count == 0) break;
+                slots[i] = spare.Dequeue();
+            }
+
+            var resolved = slots.Where(c => c != null).Select(c => c!).ToList();
+
+            var assignment = resolved.Select(c => (string?)c.Id).ToList();
+            if (!assignment.SequenceEqual(layout.Slots))
+            {
+                layout.Slots = assignment;
+                SaveLayouts();
+            }
+            return resolved;
+        }
+
+        /// <summary>Refreshes the window stepper, the count line and the filter button's state.</summary>
+        private void UpdateViewBar(int inViewCount, int shownCount)
+        {
+            var layout = CurrentLayout;
+
+            // Pull a stored count that outgrew its view back down to what the view can fill. Without
+            // this the stepper reads "12" over a grid of five, and pressing − appears to do nothing
+            // for seven presses while it walks an invisible number back into range.
+            if (_fullscreenTile == null && inViewCount > 0 && layout.WindowCount > inViewCount)
+            {
+                layout.WindowCount = inViewCount;
+                SaveLayouts();
+            }
+
+            int requested = ViewLayout.Clamp(layout.WindowCount);
+
+            WindowCountText.Text = (_fullscreenTile != null ? 1 : requested).ToString();
+            FewerWindowsButton.IsEnabled = requested > ViewLayout.MinWindows && _fullscreenTile == null;
+            MoreWindowsButton.IsEnabled = requested < ViewLayout.MaxWindows && _fullscreenTile == null
+                                          && requested < inViewCount;
+            WindowCountText.Opacity = _fullscreenTile == null ? 1 : 0.4;
+
+            CameraCountText.Text = inViewCount == 1 ? "1 camera" : $"{inViewCount} cameras";
+            if (_selectedStore != null) CameraCountText.Text += $"  ·  {_selectedStore}";
+
+            if (_fullscreenTile != null)
+            {
+                CameraCountText.Text += "  ·  expanded";
+            }
+            else
+            {
+                if (shownCount < inViewCount)
+                    CameraCountText.Text += $"  ·  showing {shownCount} — pick a camera in any window to swap it in";
+                if (shownCount > ComfortableStreams)
+                    CameraCountText.Text += $"  ·  {shownCount} streams at once may tear";
+            }
+
+            UpdateFilterAffordance();
+        }
+
+        private void FewerWindows_Click(object sender, RoutedEventArgs e) => ChangeWindowCount(-1);
+
+        private void MoreWindows_Click(object sender, RoutedEventArgs e) => ChangeWindowCount(+1);
+
+        /// <summary>
+        /// Adds or removes a window. Growing past what the view holds is refused rather than
+        /// producing blank cells, and the expanded view has one window by definition.
+        /// </summary>
+        private void ChangeWindowCount(int delta)
+        {
+            if (_fullscreenTile != null) return;
+
+            var layout = CurrentLayout;
+            int inView = CamerasInView().Count;
+            int next = ViewLayout.Clamp(layout.WindowCount + delta);
+            if (delta > 0 && next > inView) next = Math.Max(ViewLayout.MinWindows, inView);
+            if (next == layout.WindowCount) return;
+
+            layout.WindowCount = next;
+            SaveLayouts();
+            RefreshLayout();
+        }
+
+        /// <summary>
+        /// Puts a different camera in one window. If that camera already occupies another window
+        /// the two trade places, so choosing it never opens the same stream twice — two decoders
+        /// on one URL costs double and shows nothing new.
+        /// </summary>
+        private void Tile_SourceChangeRequested(CameraTile tile, Camera chosen)
+        {
+            var tiles = GridHost.Children.OfType<CameraTile>().ToList();
+            int index = tiles.IndexOf(tile);
+            if (index < 0) return;
+
+            int existing = tiles.FindIndex(t => t.Camera.Id == chosen.Id);
+
+            // Stopped before the tree is touched, for the same reason a move stops its two tiles:
+            // a VideoView re-parented while its output is attached takes the process down.
+            tile.StopPlayback("switching…");
+            if (existing >= 0) tiles[existing].StopPlayback("switching…");
+
+            var layout = CurrentLayout;
+            while (layout.Slots.Count < tiles.Count) layout.Slots.Add(null);
+
+            if (existing >= 0) layout.Slots[existing] = tile.Camera.Id;
+            layout.Slots[index] = chosen.Id;
+
+            SaveLayouts();
+            RefreshLayout();
+        }
+
+        // ============================ Picture adjustment ============================
+
+        private readonly Dictionary<VideoAdjustments.Knob, Slider> _knobSliders = new();
+        private readonly Dictionary<VideoAdjustments.Knob, TextBlock> _knobReadouts = new();
+
+        /// <summary>
+        /// Builds one labelled slider per knob, straight from the range table, so the UI cannot
+        /// offer a value LibVLC would clamp away.
+        /// </summary>
+        private void BuildAdjustPanel()
+        {
+            foreach (var knob in VideoAdjustments.AllKnobs)
+            {
+                var range = VideoAdjustments.RangeOf(knob);
+
+                var header = new Grid { Margin = new Thickness(0, 6, 0, 0) };
+                header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var icon = new TextBlock
+                {
+                    Text = range.Icon,
+                    FontFamily = new System.Windows.Media.FontFamily("Segoe MDL2 Assets"),
+                    FontSize = 12,
+                    Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 8, 0)
+                };
+                Grid.SetColumn(icon, 0);
+                header.Children.Add(icon);
+
+                var label = new TextBlock
+                {
+                    Text = range.Label,
+                    FontSize = 12,
+                    Foreground = (System.Windows.Media.Brush)FindResource("TextPrimary"),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Grid.SetColumn(label, 1);
+                header.Children.Add(label);
+
+                var readout = new TextBlock
+                {
+                    Text = VideoAdjustments.Format(knob, range.Neutral),
+                    FontSize = 11,
+                    Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    MinWidth = 42,
+                    TextAlignment = TextAlignment.Right
+                };
+                Grid.SetColumn(readout, 2);
+                header.Children.Add(readout);
+
+                var slider = new Slider
+                {
+                    Minimum = range.Min,
+                    Maximum = range.Max,
+                    Value = range.Neutral,
+                    Style = (Style)FindResource("FluentSlider"),
+                    // A step fine enough to dial in, coarse enough that the keyboard is usable.
+                    SmallChange = knob == VideoAdjustments.Knob.Hue ? 5 : 0.05,
+                    LargeChange = knob == VideoAdjustments.Knob.Hue ? 30 : 0.25,
+                    Tag = knob
+                };
+                slider.ValueChanged += Knob_ValueChanged;
+
+                // Double-click a slider to put just that one back to neutral.
+                slider.MouseDoubleClick += (s, _) =>
+                {
+                    if (s is Slider sl) sl.Value = VideoAdjustments.RangeOf((VideoAdjustments.Knob)sl.Tag!).Neutral;
+                };
+
+                _knobSliders[knob] = slider;
+                _knobReadouts[knob] = readout;
+
+                AdjustKnobPanel.Children.Add(header);
+                AdjustKnobPanel.Children.Add(slider);
+            }
+        }
+
+        /// <summary>
+        /// Which cameras the flyout edits: the one camera in the expanded view, otherwise every
+        /// camera currently in a window. Empty in All Classes, which is what disables the button.
+        /// </summary>
+        private List<Camera> AdjustTargets()
+        {
+            if (_fullscreenTile != null) return new List<Camera> { _fullscreenTile.Camera };
+            if (_selectedStore == null) return new List<Camera>();
+            return GridHost.Children.OfType<CameraTile>().Select(t => t.Camera).ToList();
+        }
+
+        /// <summary>
+        /// Enables the Filter button only where a filter has a well-defined subject, and flags
+        /// when an adjustment is in force so a picture that looks wrong is traceable to a slider
+        /// rather than blamed on the camera.
+        /// </summary>
+        private void UpdateFilterAffordance()
+        {
+            bool available = AdjustTargets().Count > 0;
+            FilterButton.IsEnabled = available;
+            FilterButton.ToolTip = available
+                ? "Brightness, contrast, saturation, hue and gamma for the cameras on screen"
+                : "Pick a camera class (or expand one camera) to adjust the picture";
+
+            bool adjusted = AdjustTargets().Any(c => !c.Adjustments.IsNeutral);
+            FilterActiveDot.Visibility = adjusted ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void Filter_Click(object sender, RoutedEventArgs e)
+        {
+            var targets = AdjustTargets();
+            if (targets.Count == 0) return;
+
+            _adjustTargets = targets;
+
+            AdjustScopeText.Text = targets.Count == 1
+                ? targets[0].Name
+                : $"{targets.Count} cameras on screen";
+            AdjustScopeHint.Text = targets.Count == 1
+                ? "Display only — the recording and what other clients see are untouched."
+                : $"Applies to every window in {_selectedStore}. Display only — nothing is re-encoded.";
+
+            LoadAdjustValues(targets[0].Adjustments);
+
+            // Anchored to whichever button was pressed, and nudged left so a 340px panel opening
+            // from a right-aligned button stays on screen.
+            AdjustPopup.PlacementTarget = sender as UIElement ?? FilterButton;
+            AdjustPopup.HorizontalOffset = -300;
+            AdjustPopup.IsOpen = true;
+        }
+
+        /// <summary>Puts saved values into the sliders without those assignments looking like user edits.</summary>
+        private void LoadAdjustValues(VideoAdjustments source)
+        {
+            _suppressAdjustChanged = true;
+            foreach (var knob in VideoAdjustments.AllKnobs)
+            {
+                float value = source.Get(knob);
+                _knobSliders[knob].Value = value;
+                _knobReadouts[knob].Text = VideoAdjustments.Format(knob, value);
+            }
+            _suppressAdjustChanged = false;
+        }
+
+        /// <summary>
+        /// A slider moved: write it to every target camera and push it into their running players.
+        /// This is the whole point of using LibVLC's adjust filter — the change lands on the next
+        /// decoded frame, so the feed responds as the slider moves and is never interrupted.
+        /// </summary>
+        private void Knob_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_suppressAdjustChanged || sender is not Slider slider || slider.Tag is not VideoAdjustments.Knob knob)
+                return;
+
+            float value = (float)slider.Value;
+            _knobReadouts[knob].Text = VideoAdjustments.Format(knob, value);
+
+            foreach (var camera in _adjustTargets)
+            {
+                camera.Adjustments.Set(knob, value);
+                if (_tiles.TryGetValue(camera.Id, out var tile)) tile.ApplyAdjustments();
+            }
+
+            FilterActiveDot.Visibility = _adjustTargets.Any(c => !c.Adjustments.IsNeutral)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
+        private void AdjustReset_Click(object sender, RoutedEventArgs e)
+        {
+            foreach (var camera in _adjustTargets)
+            {
+                camera.Adjustments.Reset();
+                if (_tiles.TryGetValue(camera.Id, out var tile)) tile.ApplyAdjustments();
+            }
+            LoadAdjustValues(new VideoAdjustments());
+            FilterActiveDot.Visibility = Visibility.Collapsed;
+            CameraStore.Save(_cameras);
+        }
+
+        /// <summary>
+        /// Closing the flyout is what commits the adjustment to disk. Saving on every slider tick
+        /// would rewrite the whole camera list dozens of times per drag.
+        /// </summary>
+        private void AdjustDone_Click(object sender, RoutedEventArgs e) => AdjustPopup.IsOpen = false;
+
+        private void AdjustPopup_Closed(object sender, System.EventArgs e)
+        {
+            if (_adjustTargets.Count == 0) return;
+            CameraStore.Save(_cameras);
+            _adjustTargets = new List<Camera>();
+            UpdateFilterAffordance();
         }
 
         private void AddCamera_Click(object sender, RoutedEventArgs e)
@@ -570,6 +947,16 @@ namespace RtspCameraViewer
             else if (e.Key == Key.F11)
             {
                 ToggleAppFullscreen();
+            }
+            else if (Keyboard.Modifiers == ModifierKeys.Control &&
+                     e.Key is Key.OemPlus or Key.Add)
+            {
+                ChangeWindowCount(+1);
+            }
+            else if (Keyboard.Modifiers == ModifierKeys.Control &&
+                     e.Key is Key.OemMinus or Key.Subtract)
+            {
+                ChangeWindowCount(-1);
             }
         }
 
