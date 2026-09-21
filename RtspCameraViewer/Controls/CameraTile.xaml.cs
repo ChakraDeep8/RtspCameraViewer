@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Threading;
 using LibVLCSharp.Shared;
 using RtspCameraViewer.Models;
@@ -65,7 +66,7 @@ namespace RtspCameraViewer.Controls
         private readonly HashSet<MoveDirection> _arrowsWanted = new();
         private DispatcherTimer? _arrowCheck;
 
-        private readonly LibVLC _libVlc;
+        private readonly LibVlcPool _vlcPool;
         private MediaPlayer? _mediaPlayer;
         private readonly DispatcherTimer _reconnectTimer;
         private bool _disposed;
@@ -94,11 +95,11 @@ namespace RtspCameraViewer.Controls
         private bool _frameSeen;
         private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(5);
 
-        public CameraTile(Camera camera, LibVLC libVlc)
+        public CameraTile(Camera camera, LibVlcPool vlcPool)
         {
             InitializeComponent();
             Camera = camera;
-            _libVlc = libVlc;
+            _vlcPool = vlcPool;
             NameText.Text = camera.Name;
 
             _reconnectTimer = new DispatcherTimer { Interval = ReconnectDelay };
@@ -140,12 +141,12 @@ namespace RtspCameraViewer.Controls
             SetStatus(CameraStatus.Stopped, "");
         }
 
-        public void StartPlayback()
+        public void StartPlayback(string connectingLabel = "connecting…")
         {
             if (_disposed) return;
             IsRunning = true;
             _frameSeen = false;
-            SetStatus(CameraStatus.Connecting, "connecting…");
+            SetStatus(CameraStatus.Connecting, connectingLabel);
 
             try
             {
@@ -158,7 +159,12 @@ namespace RtspCameraViewer.Controls
                     return;
                 }
 
-                _mediaPlayer = new MediaPlayer(_libVlc)
+                // The instance carries the preset's video-filter chain, so which instance this
+                // player comes from is what decides whether the picture is sepia, blurred, and so
+                // on. Media has to come from the same instance as the player.
+                var vlc = _vlcPool.For(FilterPreset.ById(Camera.PresetId));
+
+                _mediaPlayer = new MediaPlayer(vlc)
                 {
                     EnableHardwareDecoding = true
                 };
@@ -175,7 +181,7 @@ namespace RtspCameraViewer.Controls
                 }
                 Video.MediaPlayer = _mediaPlayer;
 
-                using var media = new Media(_libVlc, url, FromType.FromLocation);
+                using var media = new Media(vlc, url, FromType.FromLocation);
                 // Reduce latency and force TCP for more reliable RTSP behind NAT/firewalls.
                 media.AddOption(":rtsp-tcp");
                 media.AddOption(":network-caching=800");
@@ -607,6 +613,17 @@ namespace RtspCameraViewer.Controls
         /// </summary>
         public void ApplyAdjustments() => Camera.Adjustments.ApplyTo(_mediaPlayer);
 
+        /// <summary>
+        /// Completes when the last player's native teardown has actually finished.
+        ///
+        /// This matters because the teardown is deliberately OFF the UI thread (Stop() blocks
+        /// until LibVLC winds its workers down), so StopPlayback returns while the video output
+        /// is still being destroyed. Attaching a new player to this same VideoView in that window
+        /// crashed the process inside a half-unloaded D3D11 — which is exactly what restarting a
+        /// grid of tiles for a filter change does, unless it waits for this.
+        /// </summary>
+        public Task Teardown { get; private set; } = Task.CompletedTask;
+
         private void Move_Click(object sender, RoutedEventArgs e)
         {
             var direction = DirectionOf(sender);
@@ -640,10 +657,13 @@ namespace RtspCameraViewer.Controls
             // Stop() blocks until LibVLC has wound its worker threads down. Doing that on the UI
             // thread is what hung the app when switching stores stopped ~26 players in one go,
             // so the blocking part runs on the thread pool instead.
+            var finished = new TaskCompletionSource();
+            Teardown = finished.Task;
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 try { player.Stop(); player.Dispose(); }
                 catch { /* ignore teardown races */ }
+                finally { finished.TrySetResult(); }
             });
         }
 

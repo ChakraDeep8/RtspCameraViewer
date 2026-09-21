@@ -180,6 +180,27 @@
                                 <TextBlock x:Name="AdjustScopeHint" Text="" FontSize="11" TextWrapping="Wrap"
                                            Foreground="{StaticResource TextSecondary}" Margin="0,3,0,10"/>
 
+                                <!-- Preset looks, two to a row like a filter tray. Each square is
+                                     generated from the preset's own maths (PresetThumbnail), so
+                                     the swatch is the effect rather than a picture of it. -->
+                                <TextBlock Text="PRESETS" Foreground="{StaticResource TextSecondary}"
+                                           FontSize="10.5" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                <ScrollViewer MaxHeight="186" VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled">
+                                    <ItemsControl x:Name="PresetPanel" Margin="0,0,6,0">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <UniformGrid Columns="2"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                </ScrollViewer>
+
+                                <Border Height="1" Background="{StaticResource ControlStroke}" Margin="0,12,0,4"/>
+
+                                <TextBlock Text="FINE TUNE" Foreground="{StaticResource TextSecondary}"
+                                           FontSize="10.5" FontWeight="SemiBold" Margin="0,4,0,0"/>
+
                                 <StackPanel x:Name="AdjustKnobPanel"/>
 
                                 <Grid Margin="0,12,0,0">

@@ -15,7 +15,7 @@ namespace RtspCameraViewer
 {
     public partial class MainWindow : Window
     {
-        private readonly LibVLC _libVlc;
+        private readonly LibVlcPool _vlcPool = new();
         private readonly List<Camera> _cameras;
         private readonly Dictionary<string, CameraTile> _tiles = new();
         private CameraTile? _fullscreenTile;
@@ -45,10 +45,10 @@ namespace RtspCameraViewer
             FluentWindow.Attach(this);
 
             Core.Initialize();
-            _libVlc = new LibVLC(enableDebugLogs: false);
 
             _cameras = CameraStore.Load();
             _layouts = ViewLayoutStore.Load();
+            BuildPresetPanel();
             BuildAdjustPanel();
             // Tiles are created by RefreshLayout, for the cameras actually on screen. Creating
             // all of them up front left tiles alive outside the visual tree, which is exactly
@@ -92,7 +92,7 @@ namespace RtspCameraViewer
 
         private CameraTile CreateTile(Camera camera)
         {
-            var tile = new CameraTile(camera, _libVlc);
+            var tile = new CameraTile(camera, _vlcPool);
             tile.FullscreenRequested += Tile_FullscreenRequested;
             tile.RemoveRequested += Tile_RemoveRequested;
             tile.MoveRequested += Tile_MoveRequested;
@@ -617,6 +617,115 @@ namespace RtspCameraViewer
         /// Builds one labelled slider per knob, straight from the range table, so the UI cannot
         /// offer a value LibVLC would clamp away.
         /// </summary>
+        private readonly List<RadioButton> _presetButtons = new();
+        private bool _suppressPresetChanged;
+
+        /// <summary>
+        /// Builds the preset tray once. Each swatch is rendered from the preset's own maths rather
+        /// than loaded from artwork, so it cannot drift out of step with what the preset does.
+        /// </summary>
+        private void BuildPresetPanel()
+        {
+            foreach (var preset in FilterPreset.All)
+            {
+                var button = new RadioButton
+                {
+                    Style = (Style)FindResource("PresetButton"),
+                    GroupName = "FilterPreset",
+                    Tag = preset.Label,
+                    DataContext = preset,
+                    Content = new Image
+                    {
+                        Source = PresetThumbnail.Render(preset),
+                        Width = 68,
+                        Height = 44,
+                        Stretch = System.Windows.Media.Stretch.Fill,
+                        SnapsToDevicePixels = true
+                    },
+                    ToolTip = preset.NeedsRestart
+                        ? $"{preset.Label} — reconnects the stream for a moment"
+                        : $"{preset.Label} — applies instantly"
+                };
+                button.Checked += Preset_Checked;
+                _presetButtons.Add(button);
+                PresetPanel.Items.Add(button);
+            }
+        }
+
+        /// <summary>
+        /// Applies a preset to every camera the flyout is editing.
+        ///
+        /// Two paths, because the two kinds of preset behave differently and pretending otherwise
+        /// would be a lie the user can see: an adjust-only preset lands on the next frame, while
+        /// one with a video-filter module needs the stream reopened.
+        /// </summary>
+        private void Preset_Checked(object sender, RoutedEventArgs e)
+        {
+            if (_suppressPresetChanged || sender is not RadioButton { DataContext: FilterPreset preset })
+                return;
+            if (_adjustTargets.Count == 0) return;
+
+            var needRestart = new List<CameraTile>();
+            foreach (var camera in _adjustTargets)
+            {
+                bool chainChanged = FilterPreset.ById(camera.PresetId).VideoFilter != preset.VideoFilter;
+
+                camera.PresetId = preset.Id;
+                camera.Adjustments = preset.ToAdjustments();
+
+                if (!_tiles.TryGetValue(camera.Id, out var tile)) continue;
+
+                if (chainChanged && tile.IsRunning) needRestart.Add(tile);
+                else tile.ApplyAdjustments();
+            }
+            _ = RestartForFilterAsync(needRestart);
+
+            // The sliders are the preset's starting point, not a separate setting, so they follow it.
+            LoadAdjustValues(_adjustTargets[0].Adjustments);
+
+            FilterActiveDot.Visibility = _adjustTargets.Any(IsAdjusted) ? Visibility.Visible : Visibility.Collapsed;
+            CameraStore.Save(_cameras);
+        }
+
+        /// <summary>
+        /// Reopens a set of streams so a new video-filter chain takes effect, without tripping
+        /// over LibVLC's native teardown.
+        ///
+        /// Doing the obvious thing — stop then immediately start, tile by tile — crashed the
+        /// process in D3D11. StopPlayback hands the blocking part of the teardown to the thread
+        /// pool and returns straight away, so a new player was attaching to a VideoView whose
+        /// previous video output was still being destroyed, eight times at once. Waiting on each
+        /// tile's Teardown and then bringing them back through the same staggered starter the
+        /// grid uses is what makes this safe: the old output is gone before the new one asks for
+        /// the device, and the reopens are spaced rather than simultaneous.
+        /// </summary>
+        private async Task RestartForFilterAsync(List<CameraTile> tiles)
+        {
+            if (tiles.Count == 0) return;
+
+            foreach (var tile in tiles) tile.StopPlayback("applying filter…");
+
+            await Task.WhenAll(tiles.Select(t => t.Teardown));
+
+            // The vout window is destroyed slightly after Stop() returns; this is the margin.
+            await Task.Delay(250);
+
+            await StartStaggeredAsync(tiles);
+        }
+
+        /// <summary>Ticks the preset the targets are on, or none when they disagree.</summary>
+        private void SelectPresetButton(string? presetId)
+        {
+            _suppressPresetChanged = true;
+            foreach (var button in _presetButtons)
+                button.IsChecked = (button.DataContext as FilterPreset)?.Id == presetId;
+            _suppressPresetChanged = false;
+        }
+
+        /// <summary>A camera is "adjusted" if it carries a preset or a moved slider.</summary>
+        private static bool IsAdjusted(Camera c) =>
+            !c.Adjustments.IsNeutral || !string.Equals(c.PresetId, FilterPreset.NoneId, System.StringComparison.OrdinalIgnoreCase);
+
         private void BuildAdjustPanel()
         {
             foreach (var knob in VideoAdjustments.AllKnobs)
@@ -713,7 +822,7 @@ namespace RtspCameraViewer
                 ? "Brightness, contrast, saturation, hue and gamma for the cameras on screen"
                 : "Pick a camera class (or expand one camera) to adjust the picture";
 
-            bool adjusted = AdjustTargets().Any(c => !c.Adjustments.IsNeutral);
+            bool adjusted = AdjustTargets().Any(IsAdjusted);
             FilterActiveDot.Visibility = adjusted ? Visibility.Visible : Visibility.Collapsed;
         }
 
@@ -732,6 +841,12 @@ namespace RtspCameraViewer
                 : $"Applies to every window in {_selectedStore}. Display only — nothing is re-encoded.";
 
             LoadAdjustValues(targets[0].Adjustments);
+
+            // Only tick a preset when every target agrees on it; a mixed selection shows none
+            // rather than claiming a look that only some of the cameras have.
+            var firstPreset = targets[0].PresetId;
+            bool agree = targets.All(c => string.Equals(c.PresetId, firstPreset, System.StringComparison.OrdinalIgnoreCase));
+            SelectPresetButton(agree ? firstPreset : null);
 
             // Anchored to whichever button was pressed, and nudged left so a 340px panel opening
             // from a right-aligned button stays on screen.
@@ -772,19 +887,30 @@ namespace RtspCameraViewer
                 if (_tiles.TryGetValue(camera.Id, out var tile)) tile.ApplyAdjustments();
             }
 
-            FilterActiveDot.Visibility = _adjustTargets.Any(c => !c.Adjustments.IsNeutral)
+            FilterActiveDot.Visibility = _adjustTargets.Any(IsAdjusted)
                 ? Visibility.Visible
                 : Visibility.Collapsed;
         }
 
         private void AdjustReset_Click(object sender, RoutedEventArgs e)
         {
+            var resetRestart = new List<CameraTile>();
             foreach (var camera in _adjustTargets)
             {
+                // A preset built on a video-filter module has to be taken out of the chain, which
+                // means reopening the stream — resetting only the sliders would leave the sepia on.
+                bool hadChain = FilterPreset.ById(camera.PresetId).VideoFilter != null;
+
+                camera.PresetId = FilterPreset.NoneId;
                 camera.Adjustments.Reset();
-                if (_tiles.TryGetValue(camera.Id, out var tile)) tile.ApplyAdjustments();
+
+                if (!_tiles.TryGetValue(camera.Id, out var tile)) continue;
+                if (hadChain && tile.IsRunning) resetRestart.Add(tile);
+                else tile.ApplyAdjustments();
             }
+            _ = RestartForFilterAsync(resetRestart);
             LoadAdjustValues(new VideoAdjustments());
+            SelectPresetButton(FilterPreset.NoneId);
             FilterActiveDot.Visibility = Visibility.Collapsed;
             CameraStore.Save(_cameras);
         }
@@ -997,7 +1123,7 @@ namespace RtspCameraViewer
         {
             foreach (var tile in _tiles.Values)
                 tile.Dispose();
-            _libVlc.Dispose();
+            _vlcPool.Dispose();
             base.OnClosed(e);
         }
     }

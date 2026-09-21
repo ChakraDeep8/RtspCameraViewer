@@ -58,6 +58,13 @@ namespace RtspCameraViewer.Models
         public VideoAdjustments Adjustments { get; set; } = new();
 
         /// <summary>
+        /// Id of the <see cref="FilterPreset"/> applied to this camera ("none" when untouched).
+        /// Stored beside <see cref="Adjustments"/> rather than instead of them: a preset seeds the
+        /// sliders, and the sliders can then be nudged on top without losing which preset it was.
+        /// </summary>
+        public string PresetId { get; set; } = FilterPreset.NoneId;
+
+        /// <summary>
         /// Position in the grid, set by the move arrows. One global sequence across every
         /// class, so an order chosen in a filtered view stays consistent in All Classes.
         /// Null until first assigned; unassigned cameras are appended after the ordered ones.
