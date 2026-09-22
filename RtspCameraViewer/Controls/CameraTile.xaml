@@ -107,20 +107,60 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
                         <Ellipse x:Name="StatusDot" Width="9" Height="9" Fill="{StaticResource WarnBrush}"
                                  VerticalAlignment="Center" Margin="0,0,7,0"/>
+
+                        <!-- The name stays a plain label: double-clicking the header is what
+                             expands a tile, and wrapping the name in a button swallowed that. The
+                             chevron beside it is the source picker — its own small target, next
+                             to the name because that is where "what am I watching?" is answered. -->
                         <TextBlock x:Name="NameText" Grid.Column="1" Text="Camera" Foreground="{StaticResource TextPrimary}"
                                    FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
-                        <TextBlock x:Name="StatusText" Grid.Column="2" Text="" Foreground="{StaticResource TextSecondary}"
+
+                        <Button x:Name="SourceButton" Grid.Column="2" Click="SourceButton_Click"
+                                Style="{StaticResource SourcePickerButton}" Padding="5,3" Margin="4,0,0,0"
+                                ToolTip="Choose which camera this window shows">
+                            <TextBlock x:Name="SourceChevron" Text="&#xE70D;" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="8" Foreground="{StaticResource TextSecondary}"
+                                       VerticalAlignment="Center"/>
+                        </Button>
+
+                        <!-- Its own window, so it can open over the native video surface. -->
+                        <Popup x:Name="SourcePopup" PlacementTarget="{Binding ElementName=HeaderBar}" Placement="Bottom"
+                               AllowsTransparency="True" StaysOpen="False" Focusable="True"
+                               Opened="SourcePopup_Opened" HorizontalOffset="0">
+                            <Border Background="{StaticResource FlyoutBackground}" BorderBrush="{StaticResource ControlStroke}"
+                                    BorderThickness="1" CornerRadius="8" Padding="8" MinWidth="240" MaxWidth="340"
+                                    Margin="6" Effect="{StaticResource FlyoutShadow}">
+                                <StackPanel>
+                                    <Grid>
+                                        <TextBox x:Name="SourceSearch" Style="{StaticResource InputBox}" Height="30"
+                                                 TextChanged="SourceSearch_TextChanged"/>
+                                        <TextBlock x:Name="SourceSearchHint" Text="Search cameras…" IsHitTestVisible="False"
+                                                   Foreground="{StaticResource TextSecondary}" FontSize="12"
+                                                   VerticalAlignment="Center" Margin="11,0,0,0"/>
+                                    </Grid>
+                                    <ListBox x:Name="SourceList" MaxHeight="280" Margin="0,8,0,0"
+                                             Background="Transparent" BorderThickness="0"
+                                             SelectionChanged="SourceList_SelectionChanged"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                                    <TextBlock x:Name="SourceEmptyText" Text="No other cameras in this view."
+                                               Foreground="{StaticResource TextSecondary}" FontSize="12"
+                                               Margin="4,8,4,4" Visibility="Collapsed" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                        <TextBlock x:Name="StatusText" Grid.Column="3" Text="" Foreground="{StaticResource TextSecondary}"
                                    FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
 
                         <!-- Segoe MDL2 Assets, not literal symbols: the obvious characters are absent
                              from Segoe UI and rendered blank. Collapsed rather than transparent, so
                              it does not reserve width and squeeze the name when hidden. -->
-                        <StackPanel x:Name="HoverToolbar" Grid.Column="3" Orientation="Horizontal"
+                        <StackPanel x:Name="HoverToolbar" Grid.Column="4" Orientation="Horizontal"
                                     VerticalAlignment="Center" Visibility="Collapsed" Margin="8,0,0,0">
                             <Button x:Name="FullscreenButton" Content="&#xE740;" FontFamily="Segoe MDL2 Assets" Width="26" Height="24" Margin="2,0,0,0" FontSize="10"
                                     Click="FullscreenButton_Click" ToolTip="Expand (or double-click the tile)" Style="{StaticResource IconButton}"/>

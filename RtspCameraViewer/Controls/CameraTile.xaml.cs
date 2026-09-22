@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -6,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Threading;
 using LibVLCSharp.Shared;
 using RtspCameraViewer.Models;
@@ -46,6 +49,12 @@ namespace RtspCameraViewer.Controls
         /// <summary>Raised when one of the edge arrows is clicked.</summary>
         public event Action<CameraTile, MoveDirection>? MoveRequested;
 
+        /// <summary>Raised when the user picks a different camera to show in this window.</summary>
+        public event Action<CameraTile, Camera>? SourceChangeRequested;
+
+        /// <summary>Cameras offered by this window's source picker — the current view's cameras.</summary>
+        private IReadOnlyList<Camera> _sourceOptions = Array.Empty<Camera>();
+
         // Which moves make sense from this tile's current cell, set by the host after each layout.
         // An edge with nowhere to go never shows its arrow, so a dead arrow is never offered.
         private bool _canUp, _canDown, _canLeft, _canRight;
@@ -57,7 +66,7 @@ namespace RtspCameraViewer.Controls
         private readonly HashSet<MoveDirection> _arrowsWanted = new();
         private DispatcherTimer? _arrowCheck;
 
-        private readonly LibVLC _libVlc;
+        private readonly LibVlcPool _vlcPool;
         private MediaPlayer? _mediaPlayer;
         private readonly DispatcherTimer _reconnectTimer;
         private bool _disposed;
@@ -86,11 +95,11 @@ namespace RtspCameraViewer.Controls
         private bool _frameSeen;
         private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(5);
 
-        public CameraTile(Camera camera, LibVLC libVlc)
+        public CameraTile(Camera camera, LibVlcPool vlcPool)
         {
             InitializeComponent();
             Camera = camera;
-            _libVlc = libVlc;
+            _vlcPool = vlcPool;
             NameText.Text = camera.Name;
 
             _reconnectTimer = new DispatcherTimer { Interval = ReconnectDelay };
@@ -113,6 +122,7 @@ namespace RtspCameraViewer.Controls
             {
                 if (Window.GetWindow(this) is { } host) host.Deactivated -= Host_Deactivated;
                 HideAllArrows(immediate: true);
+                SourcePopup.IsOpen = false;
             };
             // Double-click the name bar to expand. A single click is deliberately inert: it was
             // previously enough to expand, which fired on any stray click while scanning the grid.
@@ -131,12 +141,12 @@ namespace RtspCameraViewer.Controls
             SetStatus(CameraStatus.Stopped, "");
         }
 
-        public void StartPlayback()
+        public void StartPlayback(string connectingLabel = "connecting…")
         {
             if (_disposed) return;
             IsRunning = true;
             _frameSeen = false;
-            SetStatus(CameraStatus.Connecting, "connecting…");
+            SetStatus(CameraStatus.Connecting, connectingLabel);
 
             try
             {
@@ -149,7 +159,12 @@ namespace RtspCameraViewer.Controls
                     return;
                 }
 
-                _mediaPlayer = new MediaPlayer(_libVlc)
+                // The instance carries the preset's video-filter chain, so which instance this
+                // player comes from is what decides whether the picture is sepia, blurred, and so
+                // on. Media has to come from the same instance as the player.
+                var vlc = _vlcPool.For(FilterPreset.ById(Camera.PresetId));
+
+                _mediaPlayer = new MediaPlayer(vlc)
                 {
                     EnableHardwareDecoding = true
                 };
@@ -166,7 +181,7 @@ namespace RtspCameraViewer.Controls
                 }
                 Video.MediaPlayer = _mediaPlayer;
 
-                using var media = new Media(_libVlc, url, FromType.FromLocation);
+                using var media = new Media(vlc, url, FromType.FromLocation);
                 // Reduce latency and force TCP for more reliable RTSP behind NAT/firewalls.
                 media.AddOption(":rtsp-tcp");
                 media.AddOption(":network-caching=800");
@@ -188,6 +203,12 @@ namespace RtspCameraViewer.Controls
                 _mediaPlayer.EndReached += OnPlayerFailed;
 
                 _mediaPlayer.Play();
+
+                // Saved picture adjustments go on as the stream comes up, so a camera that needs
+                // brightening is never briefly shown unbrightened. Re-applied once the first
+                // frame exists too: the adjust filter attaches to the video output, which does
+                // not exist yet at this point.
+                ApplyAdjustments();
             }
             catch (Exception ex)
             {
@@ -203,6 +224,7 @@ namespace RtspCameraViewer.Controls
                 // BeginInvoke is queued, so this can land after the tile was stopped or disposed.
                 if (_disposed || !IsRunning) return;
                 SetStatus(CameraStatus.Live, "live");
+                ApplyAdjustments();
                 StartAspectProbe();
             }));
 
@@ -240,6 +262,10 @@ namespace RtspCameraViewer.Controls
                         _frameSeen = true;
                         StopAspectProbe();
                         PlaceholderPanel.Visibility = Visibility.Collapsed;
+
+                        // The video output now exists, so this is the first moment the adjust
+                        // filter can actually attach.
+                        ApplyAdjustments();
 
                         if (VideoAspect == null)
                         {
@@ -370,7 +396,11 @@ namespace RtspCameraViewer.Controls
 
         private void Arrow_MouseLeave(object sender, MouseEventArgs e) => ScheduleArrowCheck();
 
-        private void Host_Deactivated(object? sender, EventArgs e) => HideAllArrows(immediate: true);
+        private void Host_Deactivated(object? sender, EventArgs e)
+        {
+            HideAllArrows(immediate: true);
+            SourcePopup.IsOpen = false;
+        }
 
         private void ShowArrow(MoveDirection direction)
         {
@@ -460,6 +490,140 @@ namespace RtspCameraViewer.Controls
                 HideArrow(direction, immediate);
         }
 
+        /// <summary>
+        /// Gives this window the list of cameras it may be switched to. Passing an empty list
+        /// (or only this camera) leaves the picker visible but inert, so the chevron never
+        /// promises a choice that is not there.
+        /// </summary>
+        public void SetSourceOptions(IReadOnlyList<Camera> options)
+        {
+            _sourceOptions = options;
+            bool any = options.Any(c => c.Id != Camera.Id);
+            SourceChevron.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
+            SourceButton.IsEnabled = any;
+        }
+
+        private void SourceButton_Click(object sender, RoutedEventArgs e)
+        {
+            SourceSearch.Text = "";
+            PopulateSourceList("");
+            SourcePopup.IsOpen = true;
+        }
+
+        private void SourcePopup_Opened(object sender, EventArgs e)
+        {
+            SourceSearch.Focus();
+            // Arrows anchored to this tile would otherwise hang over the open list.
+            HideAllArrows(immediate: true);
+        }
+
+        private void SourceSearch_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            SourceSearchHint.Visibility = string.IsNullOrEmpty(SourceSearch.Text)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            PopulateSourceList(SourceSearch.Text);
+        }
+
+        /// <summary>
+        /// Fills the picker, matching on name, class and URL so a camera can be found by whichever
+        /// of those the user actually remembers.
+        /// </summary>
+        private void PopulateSourceList(string search)
+        {
+            var matches = _sourceOptions.Where(c => Matches(c, search)).ToList();
+
+            SourceList.SelectionChanged -= SourceList_SelectionChanged;
+            SourceList.Items.Clear();
+
+            foreach (var camera in matches)
+            {
+                bool current = camera.Id == Camera.Id;
+                var row = new StackPanel { Orientation = Orientation.Horizontal };
+                row.Children.Add(new TextBlock
+                {
+                    // A tick marks the camera already in this window, so the list says where you
+                    // are as well as where you can go.
+                    Text = current ? "" : "",
+                    FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                    FontSize = 11,
+                    Opacity = current ? 1 : 0.5,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 8, 0)
+                });
+                var label = new StackPanel();
+                label.Children.Add(new TextBlock
+                {
+                    Text = camera.Name,
+                    FontSize = 13,
+                    FontWeight = current ? FontWeights.SemiBold : FontWeights.Normal,
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                });
+                if (!string.IsNullOrWhiteSpace(camera.Store))
+                {
+                    label.Children.Add(new TextBlock
+                    {
+                        Text = camera.Store,
+                        FontSize = 11,
+                        Foreground = (Brush)FindResource("TextSecondary"),
+                        TextTrimming = TextTrimming.CharacterEllipsis
+                    });
+                }
+                row.Children.Add(label);
+
+                SourceList.Items.Add(new ListBoxItem
+                {
+                    Content = row,
+                    Tag = camera,
+                    Style = (Style)FindResource("SourceListItem"),
+                    IsSelected = current,
+                    ToolTip = camera.Url
+                });
+            }
+
+            SourceEmptyText.Visibility = matches.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            SourceEmptyText.Text = string.IsNullOrWhiteSpace(search)
+                ? "No other cameras in this view."
+                : $"No camera matches “{search}”.";
+            SourceList.SelectionChanged += SourceList_SelectionChanged;
+        }
+
+        private static bool Matches(Camera camera, string search)
+        {
+            if (string.IsNullOrWhiteSpace(search)) return true;
+            search = search.Trim();
+            return Contains(camera.Name, search) || Contains(camera.Store, search) || Contains(camera.Url, search);
+
+            static bool Contains(string? value, string term) =>
+                value != null && value.Contains(term, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void SourceList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (SourceList.SelectedItem is not ListBoxItem { Tag: Camera chosen }) return;
+            SourcePopup.IsOpen = false;
+            if (chosen.Id == Camera.Id) return;
+            SourceChangeRequested?.Invoke(this, chosen);
+        }
+
+        /// <summary>
+        /// Pushes this camera's saved picture adjustments into the running player. Called on every
+        /// slider tick as well as at playback start — LibVLC applies them to the next frame, so
+        /// there is no restart and no visible interruption to the feed.
+        /// </summary>
+        public void ApplyAdjustments() => Camera.Adjustments.ApplyTo(_mediaPlayer);
+
+        /// <summary>
+        /// Completes when the last player's native teardown has actually finished.
+        ///
+        /// This matters because the teardown is deliberately OFF the UI thread (Stop() blocks
+        /// until LibVLC winds its workers down), so StopPlayback returns while the video output
+        /// is still being destroyed. Attaching a new player to this same VideoView in that window
+        /// crashed the process inside a half-unloaded D3D11 — which is exactly what restarting a
+        /// grid of tiles for a filter change does, unless it waits for this.
+        /// </summary>
+        public Task Teardown { get; private set; } = Task.CompletedTask;
+
         private void Move_Click(object sender, RoutedEventArgs e)
         {
             var direction = DirectionOf(sender);
@@ -493,10 +657,13 @@ namespace RtspCameraViewer.Controls
             // Stop() blocks until LibVLC has wound its worker threads down. Doing that on the UI
             // thread is what hung the app when switching stores stopped ~26 players in one go,
             // so the blocking part runs on the thread pool instead.
+            var finished = new TaskCompletionSource();
+            Teardown = finished.Task;
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 try { player.Stop(); player.Dispose(); }
                 catch { /* ignore teardown races */ }
+                finally { finished.TrySetResult(); }
             });
         }
 
@@ -504,6 +671,7 @@ namespace RtspCameraViewer.Controls
         {
             _disposed = true;
             HideAllArrows(immediate: true);
+            SourcePopup.IsOpen = false;
             IsRunning = false;
             _reconnectTimer.Stop();
             StopAspectProbe();

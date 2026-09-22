@@ -50,6 +50,21 @@ namespace RtspCameraViewer.Models
         public DisplayFit DisplayFit { get; set; } = DisplayFit.Stretch;
 
         /// <summary>
+        /// Picture adjustments (brightness, contrast, saturation, hue, gamma) applied to this
+        /// camera's live feed. Held per camera rather than per view because the reason to reach
+        /// for them is usually the camera itself — a dark stairwell, a washed-out forecourt — so
+        /// the correction should follow that camera into whichever view shows it.
+        /// </summary>
+        public VideoAdjustments Adjustments { get; set; } = new();
+
+        /// <summary>
+        /// Id of the <see cref="FilterPreset"/> applied to this camera ("none" when untouched).
+        /// Stored beside <see cref="Adjustments"/> rather than instead of them: a preset seeds the
+        /// sliders, and the sliders can then be nudged on top without losing which preset it was.
+        /// </summary>
+        public string PresetId { get; set; } = FilterPreset.NoneId;
+
+        /// <summary>
         /// Position in the grid, set by the move arrows. One global sequence across every
         /// class, so an order chosen in a filtered view stays consistent in All Classes.
         /// Null until first assigned; unassigned cameras are appended after the ordered ones.

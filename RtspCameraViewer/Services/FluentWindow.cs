@@ -79,6 +79,24 @@ namespace RtspCameraViewer.Services
             return toDip.HasValue ? Rect.Transform(pixels, toDip.Value) : pixels;
         }
 
+        /// <summary>
+        /// The monitor's WORK area — the screen minus the taskbar. What a restored window should
+        /// fit inside, as opposed to <see cref="GetMonitorBounds"/>, which is the whole screen and
+        /// is what full screen covers.
+        /// </summary>
+        public static Rect GetWorkAreaBounds(Window window)
+        {
+            var hwnd = new WindowInteropHelper(window).Handle;
+            var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+            if (hwnd == IntPtr.Zero || !GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), ref info))
+                return new Rect(0, 0, SystemParameters.WorkArea.Width, SystemParameters.WorkArea.Height);
+
+            var pixels = new Rect(info.Work.Left, info.Work.Top,
+                                  info.Work.Right - info.Work.Left, info.Work.Bottom - info.Work.Top);
+            var toDip = PresentationSource.FromVisual(window)?.CompositionTarget?.TransformFromDevice;
+            return toDip.HasValue ? Rect.Transform(pixels, toDip.Value) : pixels;
+        }
+
         /// <summary>System backdrops (DWMWA_SYSTEMBACKDROP_TYPE) arrived in Windows 11 22H2.</summary>
         private static bool SupportsSystemBackdrop => Environment.OSVersion.Version.Build >= 22621;
 

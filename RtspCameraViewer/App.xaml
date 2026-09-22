@@ -120,6 +120,200 @@
             </Style>
 
 
+            <!-- ====================== Flyouts, sliders, steppers ====================== -->
+
+            <!-- Windows 11 flyouts sit on a shadow, which is what separates them from whatever
+                 they open over — here, often a moving video. -->
+            <DropShadowEffect x:Key="FlyoutShadow" BlurRadius="18" ShadowDepth="4" Direction="270"
+                              Color="#000000" Opacity="0.5"/>
+
+            <!-- The tile's name doubles as its source picker: quiet until hovered, so a wall of
+                 tiles does not read as a wall of buttons. -->
+            <Style x:Key="SourcePickerButton" TargetType="Button">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                <Setter Property="Padding" Value="4,2"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" CornerRadius="4" Background="{TemplateBinding Background}"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource ControlFillHover}"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.6"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Rows in the source picker. -->
+            <Style x:Key="SourceListItem" TargetType="ListBoxItem">
+                <Setter Property="Padding" Value="8,6"/>
+                <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ListBoxItem">
+                            <Border x:Name="Bd" CornerRadius="4" Background="Transparent" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource ControlFillHover}"/>
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource ControlFill}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Fluent slider: thin accent-filled track, round thumb that grows on hover. -->
+            <Style x:Key="FluentSlider" TargetType="Slider">
+                <Setter Property="Height" Value="28"/>
+                <Setter Property="IsMoveToPointEnabled" Value="True"/>
+                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Slider">
+                            <Grid VerticalAlignment="Center">
+                                <Border Height="4" CornerRadius="2" Background="#33FFFFFF"/>
+                                <!-- The filled part of the track IS the decrease button: a Track
+                                     sizes those two buttons to the thumb's position, so styling
+                                     it is what keeps the fill glued to the thumb at any width. -->
+                                <Track x:Name="PART_Track">
+                                    <Track.DecreaseRepeatButton>
+                                        <RepeatButton Command="Slider.DecreaseLarge" Focusable="False" Height="4">
+                                            <RepeatButton.Template>
+                                                <ControlTemplate TargetType="RepeatButton">
+                                                    <Border Height="4" CornerRadius="2" Background="{DynamicResource AccentBrush}"/>
+                                                </ControlTemplate>
+                                            </RepeatButton.Template>
+                                        </RepeatButton>
+                                    </Track.DecreaseRepeatButton>
+                                    <Track.IncreaseRepeatButton>
+                                        <RepeatButton Command="Slider.IncreaseLarge" Focusable="False" Height="4">
+                                            <RepeatButton.Template>
+                                                <ControlTemplate TargetType="RepeatButton">
+                                                    <Border Background="Transparent"/>
+                                                </ControlTemplate>
+                                            </RepeatButton.Template>
+                                        </RepeatButton>
+                                    </Track.IncreaseRepeatButton>
+                                    <Track.Thumb>
+                                        <Thumb x:Name="Th" Width="18" Height="18" Focusable="False">
+                                            <Thumb.Template>
+                                                <ControlTemplate TargetType="Thumb">
+                                                    <Grid>
+                                                        <Ellipse Fill="{StaticResource TextPrimary}" Width="18" Height="18"/>
+                                                        <Ellipse x:Name="Dot" Fill="{DynamicResource AccentBrush}"
+                                                                 Width="8" Height="8"/>
+                                                    </Grid>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="Dot" Property="Width" Value="11"/>
+                                                            <Setter TargetName="Dot" Property="Height" Value="11"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsDragging" Value="True">
+                                                            <Setter TargetName="Dot" Property="Width" Value="7"/>
+                                                            <Setter TargetName="Dot" Property="Height" Value="7"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Thumb.Template>
+                                        </Thumb>
+                                    </Track.Thumb>
+                                </Track>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.4"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- A preset swatch: thumbnail over a label, accent ring when it is the one in force. -->
+            <Style x:Key="PresetButton" TargetType="RadioButton">
+                <Setter Property="Margin" Value="0,0,8,8"/>
+                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="RadioButton">
+                            <Border x:Name="Bd" CornerRadius="6" Padding="6,6,6,4" Background="Transparent"
+                                    BorderBrush="Transparent" BorderThickness="2">
+                                <StackPanel>
+                                    <Border CornerRadius="4" ClipToBounds="True" Background="#101010">
+                                        <ContentPresenter/>
+                                    </Border>
+                                    <TextBlock x:Name="Lbl" Text="{TemplateBinding Tag}" FontSize="11"
+                                               Foreground="{StaticResource TextSecondary}" Margin="0,5,0,0"
+                                               HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource ControlFillHover}"/>
+                                </Trigger>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                    <Setter TargetName="Lbl" Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                                    <Setter TargetName="Lbl" Property="FontWeight" Value="SemiBold"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- The − / + buttons either side of the window count. -->
+            <Style x:Key="StepperButton" TargetType="RepeatButton">
+                <Setter Property="Width" Value="28"/>
+                <Setter Property="Height" Value="28"/>
+                <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+                <Setter Property="FontSize" Value="10"/>
+                <Setter Property="Delay" Value="500"/>
+                <Setter Property="Interval" Value="120"/>
+                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="RepeatButton">
+                            <Border x:Name="Bd" CornerRadius="4" Background="{StaticResource ControlFill}"
+                                    BorderBrush="{StaticResource ControlStroke}" BorderThickness="1">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource ControlFillHover}"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource ControlFillPressed}"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.35"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <!-- ============================== Text input ============================== -->
 
             <!-- Fluent text box: quiet fill, and an accent underline that thickens on focus. -->
