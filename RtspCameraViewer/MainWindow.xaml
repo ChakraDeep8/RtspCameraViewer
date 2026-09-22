@@ -6,6 +6,7 @@
         Background="{StaticResource AppBackground}"
         Foreground="{StaticResource TextPrimary}"
         FontFamily="Segoe UI Variable Text, Segoe UI"
+        Icon="Assets/AppIcon.ico"
         WindowStartupLocation="CenterScreen"
         KeyDown="MainWindow_KeyDown">
 
@@ -39,8 +40,10 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
-                    <TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" FontSize="16"
-                               Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <!-- The app's own icon, not a Segoe glyph, so the title bar matches the
+                         taskbar button, Alt+Tab and the shortcut. -->
+                    <Image Source="Assets/AppIcon.ico" Width="18" Height="18" VerticalAlignment="Center"
+                           Margin="0,0,12,0" RenderOptions.BitmapScalingMode="HighQuality"/>
                     <TextBlock Text="RTSP Camera Viewer" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
                 </StackPanel>
 
