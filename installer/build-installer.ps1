@@ -62,6 +62,21 @@ if (-not $SkipPublish) {
     if (Test-Path $x86) { Remove-Item $x86 -Recurse -Force }
 }
 
+# A local seed (cameras.seed.json beside this script) is copied into the payload so a private
+# build installs with the camera list already in place. It is gitignored and never in the repo.
+# Bundling it puts real RTSP URLs and credentials inside the setup.exe, so an installer built
+# this way is for internal machines only - hence the warning rather than silence.
+$seed = Join-Path $PSScriptRoot 'cameras.seed.json'
+if (Test-Path $seed) {
+    Copy-Item $seed (Join-Path $publishDir 'cameras.seed.json') -Force
+    Write-Host ""
+    Write-Host "  Bundling cameras.seed.json - this installer carries real camera URLs and" -ForegroundColor Yellow
+    Write-Host "  credentials. Do not publish it. Build without the seed for anything shared." -ForegroundColor Yellow
+    Write-Host ""
+} else {
+    Write-Host "No cameras.seed.json - building a clean installer (starts with an empty list)." -ForegroundColor DarkGray
+}
+
 $exe = Join-Path $publishDir 'RtspCameraViewer.exe'
 if (-not (Test-Path $exe)) { throw "No published app at $exe - run without -SkipPublish." }
 

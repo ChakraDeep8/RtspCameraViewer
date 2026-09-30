@@ -5,3 +5,9 @@ publish/
 .vs/
 *.zip
 dist/
+
+# Local camera seed: real RTSP URLs, DVR addresses and embedded credentials.
+# Never commit — this repository is public.
+cameras.seed.json
+*.local.json
+.env
