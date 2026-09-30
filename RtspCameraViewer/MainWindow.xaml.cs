@@ -563,20 +563,37 @@ namespace RtspCameraViewer
                                           && requested < inViewCount;
             WindowCountText.Opacity = _fullscreenTile == null ? 1 : 0.4;
 
-            CameraCountText.Text = inViewCount == 1 ? "1 camera" : $"{inViewCount} cameras";
-            if (_selectedStore != null) CameraCountText.Text += $"  ·  {_selectedStore}";
+            // The line reads left to right as WHERE you are, HOW MUCH is there, HOW MUCH is up:
+            // "Moulali · 8 cameras · all on screen". It used to lead with a bare count and carry
+            // a sentence of instructions ("pick a camera in any window to swap it in") on every
+            // single frame — advice is read once and then becomes noise, so it moved to the
+            // tooltip, where it is there for whoever wants it.
+            var parts = new List<string> { _selectedStore ?? "All classes" };
+            parts.Add(inViewCount == 1 ? "1 camera" : $"{inViewCount} cameras");
 
             if (_fullscreenTile != null)
-            {
-                CameraCountText.Text += "  ·  expanded";
-            }
+                parts.Add($"{_fullscreenTile.Camera.Name} expanded");
+            else if (inViewCount == 0)
+                { /* the empty-state text already says it; no third clause */ }
+            else if (shownCount < inViewCount)
+                parts.Add($"{shownCount} on screen");
             else
-            {
-                if (shownCount < inViewCount)
-                    CameraCountText.Text += $"  ·  showing {shownCount} — pick a camera in any window to swap it in";
-                if (shownCount > ComfortableStreams)
-                    CameraCountText.Text += $"  ·  {shownCount} streams at once may tear";
-            }
+                parts.Add("all on screen");
+
+            CameraCountText.Text = string.Join("  ·  ", parts);
+            CameraCountText.ToolTip = _fullscreenTile == null && shownCount < inViewCount
+                ? $"{inViewCount - shownCount} not on screen. Use the chevron on any window to swap one in, "
+                  + "or add windows with +."
+                : null;
+
+            // Only shown when it is actually true, and shaped like a warning rather than a fact.
+            bool tearRisk = _fullscreenTile == null && shownCount > ComfortableStreams;
+            StreamWarnBadge.Visibility = tearRisk ? Visibility.Visible : Visibility.Collapsed;
+            StreamWarnText.Text = tearRisk ? $"{shownCount} streams may tear" : "";
+            StreamWarnBadge.ToolTip = tearRisk
+                ? $"Past about {ComfortableStreams} at once the decoders start losing picture buffers. "
+                  + "Fewer windows, or the sub stream in Settings, both help."
+                : null;
 
             UpdateFilterAffordance();
         }
