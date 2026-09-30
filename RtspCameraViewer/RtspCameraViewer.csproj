@@ -8,10 +8,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>RtspCameraViewer</AssemblyName>
     <RootNamespace>RtspCameraViewer</RootNamespace>
-    <ApplicationIcon></ApplicationIcon>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <Platforms>x64</Platforms>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\AppIcon.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="LibVLCSharp" Version="3.8.2" />
