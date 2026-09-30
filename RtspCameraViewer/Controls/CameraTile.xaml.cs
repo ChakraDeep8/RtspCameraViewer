@@ -611,6 +611,13 @@ namespace RtspCameraViewer.Controls
         /// slider tick as well as at playback start — LibVLC applies them to the next frame, so
         /// there is no restart and no visible interruption to the feed.
         /// </summary>
+        /// <summary>
+        /// Re-reads whatever the Camera object now says. Tiles are kept and reused across layout
+        /// passes, keyed by camera id, so a camera renamed in Settings would otherwise keep the
+        /// name it was built with until the tile happened to be rebuilt.
+        /// </summary>
+        public void RefreshFromCamera() => NameText.Text = Camera.Name;
+
         public void ApplyAdjustments() => Camera.Adjustments.ApplyTo(_mediaPlayer);
 
         /// <summary>

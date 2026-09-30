@@ -65,41 +65,125 @@
             </Grid>
         </StackPanel>
 
-        <!-- ============================ Classes ============================ -->
-        <DockPanel Grid.Row="1">
-            <TextBlock DockPanel.Dock="Top" Text="CAMERA CLASSES" Foreground="{StaticResource TextSecondary}"
-                       FontSize="10.5" FontWeight="SemiBold" Margin="0,0,0,6"/>
-            <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="{StaticResource TextSecondary}"
-                       FontSize="11" Margin="0,0,0,8"
-                       Text="Rename a class and every camera in it follows. Clearing a name leaves those cameras unassigned."/>
+        <!-- ===================== Classes, then the cameras in them =====================
+             Two lists rather than one: the class list renames a whole group at once, the
+             camera list moves one camera between groups. They are different jobs and mixing
+             them into one control made neither obvious. The class list is capped in height
+             because there are only ever a handful of classes, while the camera list — sixty
+             rows and growing — takes whatever space is left. -->
+        <Grid Grid.Row="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-            <Border Background="{StaticResource TileBackground}" CornerRadius="4">
-                <ListBox x:Name="ClassList" Background="Transparent" BorderThickness="0"
-                         Foreground="{StaticResource TextPrimary}" HorizontalContentAlignment="Stretch"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto" Padding="4">
-                    <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem">
-                            <Setter Property="Background" Value="Transparent"/>
-                            <Setter Property="Padding" Value="0"/>
-                        </Style>
-                    </ListBox.ItemContainerStyle>
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Grid Margin="6,5">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                         Style="{StaticResource InputBox}" FontSize="12" Margin="0,0,10,0"/>
-                                <TextBlock Grid.Column="1" Text="{Binding Summary}" VerticalAlignment="Center"
-                                           Foreground="{StaticResource TextSecondary}" FontSize="11" MinWidth="150"/>
-                            </Grid>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </Border>
-        </DockPanel>
+            <DockPanel Grid.Row="0" Margin="0,0,0,14">
+                <TextBlock DockPanel.Dock="Top" Text="CAMERA CLASSES" Foreground="{StaticResource TextSecondary}"
+                           FontSize="10.5" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="{StaticResource TextSecondary}"
+                           FontSize="11" Margin="0,0,0,8"
+                           Text="Rename a class and every camera in it follows. Clearing a name leaves those cameras unassigned."/>
+
+                <Border Background="{StaticResource TileBackground}" CornerRadius="4">
+                    <ListBox x:Name="ClassList" Background="Transparent" BorderThickness="0" MaxHeight="152"
+                             Foreground="{StaticResource TextPrimary}" HorizontalContentAlignment="Stretch"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto" Padding="4">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Padding" Value="0"/>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="6,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource InputBox}" FontSize="12" Margin="0,0,10,0"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Summary}" VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextSecondary}" FontSize="11" MinWidth="150"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
+            </DockPanel>
+
+            <!-- ============================ Cameras ============================ -->
+            <DockPanel Grid.Row="1">
+                <Grid DockPanel.Dock="Top" Margin="0,0,0,6">
+                    <TextBlock Text="CAMERAS" Foreground="{StaticResource TextSecondary}"
+                               FontSize="10.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="CameraCountText" HorizontalAlignment="Right" VerticalAlignment="Center"
+                               Foreground="{StaticResource TextSecondary}" FontSize="11" Text=""/>
+                </Grid>
+                <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="{StaticResource TextSecondary}"
+                           FontSize="11" Margin="0,0,0,8"
+                           Text="Rename a camera, or move it to another class by picking one — type a name that does not exist yet to start a new class. Nothing is written until you press Save."/>
+
+                <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <TextBox x:Name="CameraSearch" Style="{StaticResource InputBox}" Height="30"
+                             TextChanged="CameraSearch_TextChanged"/>
+                    <TextBlock x:Name="CameraSearchHint" Text="Search by name, class or URL…" IsHitTestVisible="False"
+                               Foreground="{StaticResource TextSecondary}" FontSize="12"
+                               VerticalAlignment="Center" Margin="11,0,0,0"/>
+                </Grid>
+
+                <Border Background="{StaticResource TileBackground}" CornerRadius="4">
+                    <Grid>
+                        <ListBox x:Name="CameraList" Background="Transparent" BorderThickness="0"
+                                 Foreground="{StaticResource TextPrimary}" HorizontalContentAlignment="Stretch"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" Padding="4"
+                                 VirtualizingPanel.IsVirtualizing="True">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="Padding" Value="0"/>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="6,4" Opacity="{Binding RowOpacity}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="8"/>
+                                            <ColumnDefinition Width="170"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource InputBox}" FontSize="12"
+                                                 IsEnabled="{Binding IsPresent}"
+                                                 ToolTip="{Binding Url}"/>
+
+                                        <ComboBox Grid.Column="2" IsEditable="True" FontSize="12"
+                                                  IsEnabled="{Binding IsPresent}"
+                                                  Text="{Binding ClassName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  ItemsSource="{Binding DataContext.ClassNameOptions,
+                                                                RelativeSource={RelativeSource AncestorType=Window}}"
+                                                  ToolTip="Pick a class, or type a new name to create one"/>
+
+                                        <Button Grid.Column="3" Width="30" Height="30" Margin="8,0,0,0"
+                                                FontFamily="Segoe MDL2 Assets" FontSize="11"
+                                                Content="{Binding RemoveGlyph}" ToolTip="{Binding RemoveTip}"
+                                                Click="RemoveCamera_Click" Tag="{Binding}"
+                                                Style="{StaticResource IconButton}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <TextBlock x:Name="NoCamerasText" Text="No camera matches that search."
+                                   Foreground="{StaticResource TextSecondary}" FontSize="12"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+                    </Grid>
+                </Border>
+            </DockPanel>
+        </Grid>
 
         <TextBlock Grid.Row="2" x:Name="ErrorText" Foreground="{StaticResource ErrorBrush}" FontSize="12"
                    TextWrapping="Wrap" Visibility="Collapsed" Margin="0,10,0,0"/>

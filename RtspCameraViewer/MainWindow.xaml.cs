@@ -201,7 +201,10 @@ namespace RtspCameraViewer
             // Each window offers the whole view in its picker, so any camera in the class can be
             // brought into any window without changing the count.
             foreach (var tile in GridHost.Children.OfType<CameraTile>())
+            {
                 tile.SetSourceOptions(inView);
+                tile.RefreshFromCamera();
+            }
 
             UpdateViewBar(inView.Count, visible.Count);
 
