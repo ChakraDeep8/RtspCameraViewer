@@ -281,6 +281,59 @@
                 </Setter>
             </Style>
 
+            <!-- Fluent tabs: a quiet label with an accent bar under the selected one, the way
+                 Windows 11 Settings marks its sections. Used where three sections cannot all fit
+                 on screen at once and stacking them starves the one that needs the most room. -->
+            <Style x:Key="FluentTabItem" TargetType="TabItem">
+                <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
+                <Setter Property="FontSize" Value="13"/>
+                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TabItem">
+                            <Grid>
+                                <Border x:Name="Bd" Background="Transparent" CornerRadius="4" Padding="14,8,14,9"
+                                        Margin="0,0,4,0">
+                                    <ContentPresenter ContentSource="Header" VerticalAlignment="Center"
+                                                      HorizontalAlignment="Center"/>
+                                </Border>
+                                <Border x:Name="Indicator" Height="2.5" CornerRadius="2" Width="20"
+                                        VerticalAlignment="Bottom" HorizontalAlignment="Center"
+                                        Background="{DynamicResource AccentBrush}" Visibility="Collapsed"/>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource ControlFillHover}"/>
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                    <Setter TargetName="Indicator" Property="Visibility" Value="Visible"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="FluentTabControl" TargetType="TabControl">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TabControl">
+                            <DockPanel>
+                                <Border DockPanel.Dock="Top" BorderBrush="{StaticResource ControlStroke}"
+                                        BorderThickness="0,0,0,1" Margin="0,0,0,14">
+                                    <TabPanel IsItemsHost="True" HorizontalAlignment="Left" Margin="0,0,0,0"/>
+                                </Border>
+                                <ContentPresenter ContentSource="SelectedContent"/>
+                            </DockPanel>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <!-- The − / + buttons either side of the window count. -->
             <Style x:Key="StepperButton" TargetType="RepeatButton">
                 <Setter Property="Width" Value="28"/>
