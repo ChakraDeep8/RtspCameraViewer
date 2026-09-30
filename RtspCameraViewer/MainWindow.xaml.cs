@@ -350,11 +350,22 @@ namespace RtspCameraViewer
         /// <summary>
         /// Swaps a camera with its neighbour in the given direction. Left and right step through
         /// reading order (wrapping across row ends); up and down swap with the cell a whole row
-        /// away. What is swapped is the stored position, so it survives restarts and holds in
-        /// every view that shows both cameras.
+        /// away.
+        ///
+        /// What gets swapped is the VIEW'S SLOT ASSIGNMENT, which is what decides the grid now.
+        /// Swapping only Camera.Order — as this did when Order alone drove the layout — became a
+        /// no-op the moment windows got explicit slots: the arrows appeared to do nothing,
+        /// because RefreshLayout went straight back to the stored slots and rebuilt the
+        /// arrangement the move had just changed.
+        ///
+        /// Order is swapped too. It no longer positions anything on screen, but it is still the
+        /// sequence that fills slots for cameras that have never been placed, and leaving it
+        /// contradicting the visible order would make the next added camera land oddly.
         /// </summary>
         private void Tile_MoveRequested(CameraTile tile, MoveDirection direction)
         {
+            if (_fullscreenTile != null) return; // nothing to rearrange in the single-camera view
+
             var tiles = GridHost.Children.OfType<CameraTile>().ToList();
             int index = tiles.IndexOf(tile);
             if (index < 0) return;
@@ -370,6 +381,11 @@ namespace RtspCameraViewer
             if (target < 0 || target >= tiles.Count) return;
 
             var other = tiles[target];
+
+            var layout = CurrentLayout;
+            while (layout.Slots.Count < tiles.Count) layout.Slots.Add(null);
+            (layout.Slots[index], layout.Slots[target]) = (layout.Slots[target], layout.Slots[index]);
+
             (tile.Camera.Order, other.Camera.Order) = (other.Camera.Order, tile.Camera.Order);
 
             // Stop both BEFORE touching the tree: moving a VideoView while its video output is
@@ -378,6 +394,10 @@ namespace RtspCameraViewer
             tile.StopPlayback("moving…");
             other.StopPlayback("moving…");
 
+            // Rearrange just these two in place. RefreshLayout below compares the tree against
+            // what the slots now say and leaves it alone when they already match — which is the
+            // point: a full rebuild would re-parent every tile, including ones still streaming,
+            // and that is what used to take the process down.
             int lo = Math.Min(index, target), hi = Math.Max(index, target);
             var first = tiles[lo];
             var second = tiles[hi];
@@ -386,6 +406,7 @@ namespace RtspCameraViewer
             GridHost.Children.Insert(lo, second);
             GridHost.Children.Insert(hi, first);
 
+            SaveLayouts();
             CameraStore.Save(_cameras);
             RefreshLayout();
         }
