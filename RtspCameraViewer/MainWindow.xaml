@@ -70,8 +70,11 @@
                             Click="AppFullscreen_Click" ToolTip="Full screen (F11)" Style="{StaticResource IconButton}"/>
                 </StackPanel>
 
-                <!-- Room for the system caption buttons (3 x 46px), which DWM draws here. -->
-                <Border Grid.Column="3" Width="142"/>
+                <!-- Room for the system caption buttons (3 x 46px), which DWM draws here.
+                     Full screen has no caption buttons — WindowStyle.None removes them — so this
+                     reserve is given back there (see UpdateCaptionReserve), otherwise the
+                     toolbar sits 142px short of the edge with nothing in the gap. -->
+                <Border x:Name="CaptionButtonReserve" Grid.Column="3" Width="142"/>
             </Grid>
 
             <!-- View bar: which class is on screen (left), how it is shown (right). -->

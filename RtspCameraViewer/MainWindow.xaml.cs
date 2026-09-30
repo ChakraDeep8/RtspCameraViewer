@@ -74,6 +74,19 @@ namespace RtspCameraViewer
         /// frame, so without an inset the top of the title bar - and the caption buttons - sit
         /// off-screen. True full screen has no frame, so no inset there.
         /// </summary>
+        /// <summary>
+        /// Gives back the strip held for the system caption buttons when there are none.
+        ///
+        /// DWM draws minimize / maximize / close into the extended frame, and the title bar
+        /// reserves 142px on the right so the toolbar does not sit under them. True full screen
+        /// is WindowStyle.None, which has no caption buttons at all — so that reserve becomes an
+        /// empty gap and everything in the toolbar stops short of the edge.
+        /// </summary>
+        private void UpdateCaptionReserve()
+        {
+            CaptionButtonReserve.Width = _isAppFullscreen ? 0 : 142;
+        }
+
         private void UpdateMaximizedInset()
         {
             if (WindowState == WindowState.Maximized && !_isAppFullscreen)
@@ -87,6 +100,8 @@ namespace RtspCameraViewer
             {
                 RootBorder.Margin = new Thickness(0);
             }
+
+            UpdateCaptionReserve();
         }
 
 
