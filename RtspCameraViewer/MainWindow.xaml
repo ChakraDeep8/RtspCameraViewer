@@ -47,26 +47,11 @@
                     <TextBlock Text="RTSP Camera Viewer" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
                 </StackPanel>
 
-                <!-- What you are looking at, then a caution only when there is one. The caution
-                     is its own element so it can be coloured: buried in the grey line it read
-                     as more trivia, which is the one thing there it is not. -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
-                            Margin="14,0,12,0">
-                    <TextBlock x:Name="CameraCountText" Text="0 cameras"
-                               Foreground="{StaticResource TextSecondary}" FontSize="12"
-                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                    <Border x:Name="StreamWarnBadge" Visibility="Collapsed" Margin="10,0,0,0"
-                            Background="#26FCE100" BorderBrush="#59FCE100" BorderThickness="1"
-                            CornerRadius="10" Padding="8,1" VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE7BA;" FontFamily="Segoe MDL2 Assets" FontSize="10"
-                                       Foreground="{StaticResource WarnBrush}" VerticalAlignment="Center"
-                                       Margin="0,0,6,0"/>
-                            <TextBlock x:Name="StreamWarnText" Text="" FontSize="11"
-                                       Foreground="{StaticResource WarnBrush}" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
+<!-- Column 1 is deliberately empty. It used to carry a running commentary — class,
+                     counts, advice, warnings — which is a lot of grey text to read past every
+                     time you glance at a wall of cameras. What it said is either already on
+                     screen (the class picker, the window count) or belongs where it is acted
+                     on (Settings), and the tear risk now colours the window count itself. -->
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
                     <Button Height="32" Padding="12,0" Click="AddCamera_Click" Style="{StaticResource AccentButton}">

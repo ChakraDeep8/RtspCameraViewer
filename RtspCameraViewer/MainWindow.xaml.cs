@@ -563,36 +563,22 @@ namespace RtspCameraViewer
                                           && requested < inViewCount;
             WindowCountText.Opacity = _fullscreenTile == null ? 1 : 0.4;
 
-            // The line reads left to right as WHERE you are, HOW MUCH is there, HOW MUCH is up:
-            // "Moulali · 8 cameras · all on screen". It used to lead with a bare count and carry
-            // a sentence of instructions ("pick a camera in any window to swap it in") on every
-            // single frame — advice is read once and then becomes noise, so it moved to the
-            // tooltip, where it is there for whoever wants it.
-            var parts = new List<string> { _selectedStore ?? "All classes" };
-            parts.Add(inViewCount == 1 ? "1 camera" : $"{inViewCount} cameras");
-
-            if (_fullscreenTile != null)
-                parts.Add($"{_fullscreenTile.Camera.Name} expanded");
-            else if (inViewCount == 0)
-                { /* the empty-state text already says it; no third clause */ }
-            else if (shownCount < inViewCount)
-                parts.Add($"{shownCount} on screen");
-            else
-                parts.Add("all on screen");
-
-            CameraCountText.Text = string.Join("  ·  ", parts);
-            CameraCountText.ToolTip = _fullscreenTile == null && shownCount < inViewCount
-                ? $"{inViewCount - shownCount} not on screen. Use the chevron on any window to swap one in, "
-                  + "or add windows with +."
-                : null;
-
-            // Only shown when it is actually true, and shaped like a warning rather than a fact.
+            // No running commentary in the title bar any more. The class picker already says
+            // which class is on screen and the stepper says how many windows there are, so a
+            // sentence repeating both was grey text to read past on every glance.
+            //
+            // The one thing with nowhere else to live is the tear risk, so it colours the window
+            // count itself: the number goes amber past the point where decoders start losing
+            // picture buffers, and the tooltip says what to do about it. A number that changes
+            // colour is noticed without anything being added to the window.
             bool tearRisk = _fullscreenTile == null && shownCount > ComfortableStreams;
-            StreamWarnBadge.Visibility = tearRisk ? Visibility.Visible : Visibility.Collapsed;
-            StreamWarnText.Text = tearRisk ? $"{shownCount} streams may tear" : "";
-            StreamWarnBadge.ToolTip = tearRisk
-                ? $"Past about {ComfortableStreams} at once the decoders start losing picture buffers. "
-                  + "Fewer windows, or the sub stream in Settings, both help."
+            WindowCountText.Foreground = tearRisk
+                ? (System.Windows.Media.Brush)FindResource("WarnBrush")
+                : (System.Windows.Media.Brush)FindResource("TextPrimary");
+            WindowCountText.ToolTip = tearRisk
+                ? $"{shownCount} streams at once — past about {ComfortableStreams} the decoders "
+                  + "start losing picture buffers and frames tear. Fewer windows, or the sub stream "
+                  + "in Settings, both help."
                 : null;
 
             UpdateFilterAffordance();
@@ -1004,8 +990,6 @@ namespace RtspCameraViewer
 
             RefreshLayout();
 
-            int count = dialog.NewCameras.Count;
-            CameraCountText.Text += $"  ·  added {count} camera{(count == 1 ? "" : "s")}";
         }
 
         private void Settings_Click(object sender, RoutedEventArgs e)
